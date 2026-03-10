@@ -14,6 +14,16 @@ test.describe("Auth Flow", () => {
     await expect(page.getByText("Default credentials (dev only):")).toHaveCount(0);
   });
 
+  test("should switch login page language", async ({ page }) => {
+    await page.goto("/login");
+    await expect(page.getByRole("button", { name: "中文" })).toBeVisible();
+    await page.getByRole("button", { name: "中文" }).click();
+    await expect(page.locator("h1")).toHaveText("词汇学习");
+    await expect(page.getByText("登录以继续你的词汇学习")).toBeVisible();
+    await expect(page.getByText("还没有账号？")).toBeVisible();
+    await expect(page.getByRole("button", { name: "登录" })).toBeVisible();
+  });
+
   test("should login with correct credentials", async ({ page }) => {
     await page.goto("/login");
     
@@ -52,6 +62,16 @@ test.describe("Auth Flow", () => {
 
     await page.waitForURL(/.*app/);
     await expect(page).toHaveURL(/.*app/);
+  });
+
+  test("should switch register page language", async ({ page }) => {
+    await page.goto("/register");
+    await expect(page.getByRole("button", { name: "中文" })).toBeVisible();
+    await page.getByRole("button", { name: "中文" }).click();
+    await expect(page.locator("h1")).toHaveText("创建账号");
+    await expect(page.getByText("注册后即可建立你自己的私人词汇库")).toBeVisible();
+    await expect(page.getByText("已经有账号？")).toBeVisible();
+    await expect(page.getByRole("button", { name: "创建账号" })).toBeVisible();
   });
 
   test("should protect /app route", async ({ page }) => {
