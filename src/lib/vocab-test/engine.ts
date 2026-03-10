@@ -12,9 +12,9 @@ const EARLY_CONFIDENCE_CAPS = [0.58, 0.58, 0.58, 0.58, 0.58, 0.64, 0.64, 0.64, 0
 const EARLY_CONFIDENCE_PENALTIES = [0.03, 0.028, 0.026, 0.024, 0.022, 0.02, 0.018, 0.016, 0.012, 0.01] as const;
 const LATE_CONFIDENCE_MAX_BOOST: Record<VocabLevel, number> = {
   cet4: 0,
-  cet6: 0.06,
-  ielts: 0.1,
-  gre: 0.14,
+  cet6: 0.04,
+  ielts: 0.07,
+  gre: 0.1,
 };
 const LOW_CONFIDENCE_RESULT_CAP_LEVEL: VocabLevel = "cet6";
 const LOW_CONFIDENCE_RESULT_MIN_FACTOR = 0.45;
@@ -90,9 +90,18 @@ type SoftTargetBand = {
 };
 
 const CET4_SOFT_TARGET_BAND: SoftTargetBand = { min: 3200, max: 3300 };
+const CET4_STABLE_TARGET_BAND: SoftTargetBand = { min: 3600, max: 3900 };
+const CET4_LATE_RECOVERY_BAND: SoftTargetBand = { min: 3800, max: 4300 };
 const CET6_SOFT_TARGET_BAND: SoftTargetBand = { min: 4700, max: 4800 };
 const IELTS_SOFT_TARGET_BAND: SoftTargetBand = { min: 7000, max: 7600 };
 const GRE_LATE_RECOVERY_BAND: SoftTargetBand = { min: 9000, max: 9600 };
+const GRE_MODERATE_CONFIDENCE_CAP = 10400;
+const EARLY_GUARDRAIL_BASE_FACTOR: Record<VocabLevel, number> = {
+  cet4: 0.52,
+  cet6: 0.6,
+  ielts: 0.68,
+  gre: 0.76,
+};
 
 type LowConfidenceResultOutput = LowConfidenceResultInput & {
   lowConfidenceResult: boolean;
@@ -152,14 +161,6 @@ function splitMeaningTokens(raw: string): string[] {
     .split(/[；;，,、]+/)
     .map((item) => item.replace(/^\s*[a-z]{1,6}\.\s*/iu, "").trim())
     .filter(Boolean);
-}
-
-function extractCoreSegments(raw: string): string[] {
-  return raw
-    .replace(/^【[^】]+】\s*/u, "")
-    .split(/[；;，,、]+/)
-    .map((item) => item.replace(/^\s*[a-z]{1,6}\.\s*/iu, "").trim())
-    .filter((item) => item.length >= 2);
 }
 
 function isOptionTooClose(a: string, b: string): boolean {
@@ -517,7 +518,10 @@ export function getRecommendedLevel(vocabSize: number): VocabLevel {
 
 export function applyEstimatedVocabGuardrail(input: EstimatedVocabGuardrailInput): number {
   if (input.questionCount < MIN_QUESTIONS) {
-    return input.estimatedVocab;
+    const earlyProgress = clamp((Math.max(input.questionCount, 1) - 1) / (MIN_QUESTIONS - 1), 0, 1);
+    const baseFactor = EARLY_GUARDRAIL_BASE_FACTOR[input.recommendedLevel];
+    const factor = clamp(baseFactor + (1 - baseFactor) * earlyProgress, baseFactor, 1);
+    return Math.max(0, Math.round(input.estimatedVocab * factor));
   }
 
   if (
@@ -621,6 +625,37 @@ export function applyFinalLevelPriorityAdjustment(
     recentLevelAnswers.length > 0
       ? recentLevelAnswers.reduce((sum, answer) => sum + scoreAnswer(answer), 0) / recentLevelAnswers.length
       : 0.5;
+
+  if (
+    input.questionCount >= 100 &&
+    input.startedLevel === "cet4" &&
+    (input.currentLevel === "cet4" || input.currentLevel === "cet6") &&
+    input.recommendedLevel === "cet4" &&
+    input.confidence >= 0.89 &&
+    input.estimatedVocab < 3600
+  ) {
+    const estimatedVocab = getSoftTargetInBand(input, CET4_LATE_RECOVERY_BAND, recentAverageScore);
+    return {
+      estimatedVocab,
+      recommendedLevel: "cet4",
+    };
+  }
+
+  if (
+    input.questionCount >= 70 &&
+    input.questionCount < 90 &&
+    input.currentLevel === "gre" &&
+    input.recommendedLevel === "gre" &&
+    input.confidence < 0.92 &&
+    input.estimatedVocab > GRE_MODERATE_CONFIDENCE_CAP &&
+    recentAverageScore < 0.82
+  ) {
+    return {
+      estimatedVocab: GRE_MODERATE_CONFIDENCE_CAP,
+      recommendedLevel: "gre",
+    };
+  }
+
   const softBand = getEstimatedVocabSoftTargetBand(input, recentAverageScore);
   if (softBand === null) {
     return {
@@ -679,7 +714,7 @@ function applyEstimatedVocabOutcome(
     return getSoftTargetInBand(input, softBand, recentAverageScore);
   }
 
-  const ceiling = getEstimatedVocabCeiling(input, recentAverageScore);
+  const ceiling = getEstimatedVocabCeiling(input);
   return ceiling === null ? estimate : Math.min(estimate, ceiling);
 }
 
@@ -706,11 +741,12 @@ function getEstimatedVocabSoftTargetBand(
 
     if (
       input.currentLevel === "cet4" &&
+      input.questionCount >= MIN_QUESTIONS &&
       input.questionCount < 90 &&
       input.confidence < 0.92 &&
       recentAverageScore <= 0.36
     ) {
-      return CET4_SOFT_TARGET_BAND;
+      return CET4_STABLE_TARGET_BAND;
     }
   }
 
@@ -785,7 +821,6 @@ function getLevelCeiling(level: VocabLevel): number {
 
 function getEstimatedVocabCeiling(
   input: EstimatedVocabGuardrailInput,
-  recentAverageScore: number,
 ): number | null {
   if (
     input.recommendedLevel === "ielts" &&
@@ -880,7 +915,7 @@ function getAdvancedMasteryConfidenceBonus(answers: VocabAnswerRecord[], level: 
   }
 
   const masteryStrength = clamp((accuracy - baseline) / (1 - baseline), 0, 1);
-  const maxBonus = level === "gre" ? 0.2 : 0.06;
+  const maxBonus = level === "gre" ? 0.14 : 0.04;
   return maxBonus * progress * masteryStrength;
 }
 
@@ -1018,6 +1053,7 @@ function buildOptions(
   const excluded = new Set((options.excludeMeanings || []).slice(-20).map((item) => normalizeMeaningText(item)));
   const collectedNormalized = new Set<string>();
   const seenWords = new Set<string>();
+  const targetNormalized = normalizeMeaningText(target);
   const targetIndex = clamp(options.correctAnswerIndex ?? 0, 0, 3);
   const windows = [
     { min: 0.08, max: 0.5 },
@@ -1027,7 +1063,15 @@ function buildOptions(
   const globalPool = index.allSorted.length > 64 ? shuffle(index.allSorted) : index.allSorted;
   const distractors: string[] = [];
 
-  const tryCollect = (minSimilarity: number, maxSimilarity: number) => {
+  const tryCollect = (
+    minSimilarity: number,
+    maxSimilarity: number,
+    controls: {
+      allowSeenMeaning: boolean;
+      enforceTargetDistance: boolean;
+      enforceCrossDistance: boolean;
+    }
+  ) => {
     for (const entry of globalPool) {
       if (distractors.length >= 3) {
         return;
@@ -1038,13 +1082,19 @@ function buildOptions(
       }
       const value = toOptionMeaning(entry, entry.pos);
       const normalized = normalizeMeaningText(value);
-      if (!normalized || normalized === normalizeMeaningText(target)) {
+      if (!normalized || normalized === targetNormalized) {
         continue;
       }
-      if (excluded.has(normalized) || collectedNormalized.has(normalized)) {
+      if (collectedNormalized.has(normalized)) {
         continue;
       }
-      if (isOptionTooClose(value, focus) || distractors.some((item) => isOptionTooClose(item, value))) {
+      if (!controls.allowSeenMeaning && excluded.has(normalized)) {
+        continue;
+      }
+      if (controls.enforceTargetDistance && isOptionTooClose(value, focus)) {
+        continue;
+      }
+      if (controls.enforceCrossDistance && distractors.some((item) => isOptionTooClose(item, value))) {
         continue;
       }
       const similarity = textSimilarity(value, focus);
@@ -1058,7 +1108,11 @@ function buildOptions(
   };
 
   for (const window of windows) {
-    tryCollect(window.min, window.max);
+    tryCollect(window.min, window.max, {
+      allowSeenMeaning: false,
+      enforceTargetDistance: true,
+      enforceCrossDistance: true,
+    });
     if (distractors.length >= 3) {
       break;
     }
@@ -1075,7 +1129,7 @@ function buildOptions(
       }
       const value = toOptionMeaning(entry, entry.pos);
       const normalized = normalizeMeaningText(value);
-      if (!normalized || normalized === normalizeMeaningText(target)) {
+      if (!normalized || normalized === targetNormalized) {
         continue;
       }
       if (excluded.has(normalized) || collectedNormalized.has(normalized)) {
@@ -1088,6 +1142,30 @@ function buildOptions(
       collectedNormalized.add(normalized);
       distractors.push(value);
     }
+  }
+
+  if (distractors.length < 3) {
+    tryCollect(0, 1, {
+      allowSeenMeaning: true,
+      enforceTargetDistance: true,
+      enforceCrossDistance: true,
+    });
+  }
+
+  if (distractors.length < 3) {
+    tryCollect(0, 1, {
+      allowSeenMeaning: true,
+      enforceTargetDistance: true,
+      enforceCrossDistance: false,
+    });
+  }
+
+  if (distractors.length < 3) {
+    tryCollect(0, 1, {
+      allowSeenMeaning: true,
+      enforceTargetDistance: false,
+      enforceCrossDistance: false,
+    });
   }
 
   if (distractors.length < 3) {
@@ -1388,8 +1466,11 @@ export function getNextLevelAfterCalibration(
   answer: VocabAnswerRecord
 ): VocabLevel {
   if (state.questionCount < CALIBRATION_QUESTIONS) {
-    const lastAnswer = state.answers[state.answers.length - 1];
-    if (!lastAnswer || lastAnswer.isCorrect !== answer.isCorrect) {
+    const calibrationWindow = state.answers.slice(-2);
+    if (
+      calibrationWindow.length < 2 ||
+      calibrationWindow.some((item) => item.isCorrect !== answer.isCorrect)
+    ) {
       return state.currentLevel;
     }
     const currentIndex = levelToIndex(state.currentLevel);

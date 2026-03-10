@@ -57,24 +57,147 @@ function state(overrides: Partial<VocabAssessmentState>): VocabAssessmentState {
   };
 }
 
-function similarityLikeProduct(a: string, b: string): number {
-  const norm = (raw: string) =>
-    raw
-      .replace(/^【[^】]+】\s*/u, "")
-      .replace(/[；。\s]+/gu, "")
-      .trim();
-  const left = norm(a);
-  const right = norm(b);
-  if (!left || !right) {
-    return 0;
-  }
-  const setA = new Set(left.split(""));
-  const setB = new Set(right.split(""));
-  let hit = 0;
-  for (const ch of setA) {
-    if (setB.has(ch)) hit += 1;
-  }
-  return hit / Math.max(setA.size + setB.size - hit, 1);
+function evaluateSessionOutcome(input: {
+  answers: VocabAnswerRecord[];
+  currentLevel: VocabAssessmentState["currentLevel"];
+  startedLevel: VocabAssessmentState["startedLevel"];
+  priorVocab?: number;
+}) {
+  const questionCount = input.answers.length;
+  const rawEstimatedVocab = estimateVocabSize(input.answers, input.priorVocab);
+  const rawConfidence = estimateConfidence(input.answers, input.priorVocab);
+  const confidence = adjustConfidenceForLateSession(
+    adjustConfidenceForEarlySession(rawConfidence, questionCount),
+    questionCount,
+    input.currentLevel,
+    input.answers,
+  );
+  const guardedEstimate = resolveGuardedEstimatedVocab({
+    questionCount,
+    estimatedVocab: rawEstimatedVocab,
+    confidence,
+    currentLevel: input.currentLevel,
+    startedLevel: input.startedLevel,
+    answers: input.answers,
+  });
+  const lowConfidenceResult = applyLowConfidenceResultPolicy({
+    questionCount,
+    confidence,
+    estimatedVocab: guardedEstimate.estimatedVocab,
+    recommendedLevel: guardedEstimate.recommendedLevel,
+    currentLevel: input.currentLevel,
+    answers: input.answers,
+  });
+
+  const finalResult = applyFinalLevelPriorityAdjustment({
+    questionCount,
+    confidence: lowConfidenceResult.confidence,
+    estimatedVocab: lowConfidenceResult.estimatedVocab,
+    recommendedLevel: lowConfidenceResult.recommendedLevel,
+    currentLevel: input.currentLevel,
+    startedLevel: input.startedLevel,
+    answers: input.answers,
+  });
+
+  return {
+    confidence: lowConfidenceResult.confidence,
+    estimatedVocab: finalResult.estimatedVocab,
+    recommendedLevel: finalResult.recommendedLevel,
+  };
+}
+
+function buildStageAnswers(input: {
+  prefix: string;
+  level: VocabAnswerRecord["level"];
+  count: number;
+  responseAt: (index: number) => Pick<VocabAnswerRecord, "responseType" | "isCorrect" | "knew" | "selectedMeaning">;
+}): VocabAnswerRecord[] {
+  return Array.from({ length: input.count }).map((_, index) => {
+    const response = input.responseAt(index);
+    return answer({
+      questionId: `${input.prefix}-${index}`,
+      word: `${input.prefix}-${index}`,
+      level: input.level,
+      responseType: response.responseType,
+      isCorrect: response.isCorrect,
+      knew: response.knew,
+      selectedMeaning: response.selectedMeaning,
+    });
+  });
+}
+
+function stageWarmup(prefix: string, level: VocabAnswerRecord["level"], count: number): VocabAnswerRecord[] {
+  return buildStageAnswers({
+    prefix,
+    level,
+    count,
+    responseAt: (index) => ({
+      responseType: "option",
+      isCorrect: index % 7 !== 0,
+      knew: true,
+      selectedMeaning: index % 7 !== 0 ? "【v.】评估；评价；进行判断" : "错误释义",
+    }),
+  });
+}
+
+function stageBoundary(prefix: string, level: VocabAnswerRecord["level"], count: number): VocabAnswerRecord[] {
+  return buildStageAnswers({
+    prefix,
+    level,
+    count,
+    responseAt: (index) => {
+      if (index % 8 === 0) {
+        return { responseType: "unsure", isCorrect: false, knew: true, selectedMeaning: null };
+      }
+      if (index % 5 === 0) {
+        return { responseType: "unknown", isCorrect: false, knew: false, selectedMeaning: null };
+      }
+      if (index % 3 === 0) {
+        return { responseType: "option", isCorrect: false, knew: true, selectedMeaning: "错误释义" };
+      }
+      return { responseType: "option", isCorrect: true, knew: true, selectedMeaning: "【v.】评估；评价；进行判断" };
+    },
+  });
+}
+
+function stageChallenge(prefix: string, level: VocabAnswerRecord["level"], count: number): VocabAnswerRecord[] {
+  return buildStageAnswers({
+    prefix,
+    level,
+    count,
+    responseAt: (index) => {
+      if (index % 3 === 0) {
+        return { responseType: "unknown", isCorrect: false, knew: false, selectedMeaning: null };
+      }
+      if (index % 4 === 0) {
+        return { responseType: "unsure", isCorrect: false, knew: true, selectedMeaning: null };
+      }
+      if (index % 10 === 0) {
+        return { responseType: "option", isCorrect: true, knew: true, selectedMeaning: "【v.】评估；评价；进行判断" };
+      }
+      return { responseType: "option", isCorrect: false, knew: true, selectedMeaning: "错误释义" };
+    },
+  });
+}
+
+function stageLateDrift(prefix: string, level: VocabAnswerRecord["level"], count: number): VocabAnswerRecord[] {
+  return buildStageAnswers({
+    prefix,
+    level,
+    count,
+    responseAt: (index) => {
+      if (index % 6 === 0) {
+        return { responseType: "unknown", isCorrect: false, knew: false, selectedMeaning: null };
+      }
+      if (index % 5 === 0) {
+        return { responseType: "unsure", isCorrect: false, knew: true, selectedMeaning: null };
+      }
+      if (index % 4 === 0) {
+        return { responseType: "option", isCorrect: false, knew: true, selectedMeaning: "错误释义" };
+      }
+      return { responseType: "option", isCorrect: true, knew: true, selectedMeaning: "【v.】评估；评价；进行判断" };
+    },
+  });
 }
 
 describe("vocab-test engine", () => {
@@ -251,6 +374,52 @@ describe("vocab-test engine", () => {
     expect(adjustConfidenceForEarlySession(0.91, 13)).toBe(0.91);
   });
 
+  it("evaluateSessionOutcome: should not pin the very first unknown answer to the cet4 soft band", () => {
+    const result = evaluateSessionOutcome({
+      answers: [
+        answer({
+          questionId: "q-unknown-0",
+          level: "cet4",
+          responseType: "unknown",
+          knew: false,
+          isCorrect: false,
+          selectedMeaning: null,
+        }),
+      ],
+      currentLevel: "cet4",
+      startedLevel: "cet4",
+    });
+
+    expect(result.recommendedLevel).toBe("cet4");
+    expect(result.estimatedVocab).toBeLessThan(3200);
+  });
+
+  it("applyEstimatedVocabGuardrail: should damp early overestimation before the minimum question threshold", () => {
+    const answers = Array.from({ length: 10 }).map((_, idx) =>
+      answer({
+        questionId: `q-early-${idx}`,
+        level: idx < 6 ? "cet4" : "cet6",
+        responseType: idx < 4 ? "option" : idx % 3 === 0 ? "unsure" : "unknown",
+        isCorrect: idx < 4,
+        knew: idx < 6,
+        selectedMeaning: idx < 4 ? "【v.】评估；评价；进行判断" : null,
+      })
+    );
+
+    const guarded = applyEstimatedVocabGuardrail({
+      questionCount: 10,
+      estimatedVocab: 6400,
+      confidence: 0.64,
+      currentLevel: "cet4",
+      recommendedLevel: "ielts",
+      answers,
+      startedLevel: "cet4",
+    });
+
+    expect(guarded).toBeLessThan(6400);
+    expect(guarded).toBeLessThanOrEqual(5200);
+  });
+
   it("adjustConfidenceForLateSession: should not accelerate before question 40", () => {
     expect(adjustConfidenceForLateSession(0.7, 39, "gre")).toBe(0.7);
   });
@@ -267,6 +436,12 @@ describe("vocab-test engine", () => {
     expect(cet6).toBeGreaterThan(0.7);
     expect(ielts).toBeGreaterThan(cet6);
     expect(gre).toBeGreaterThan(ielts);
+  });
+
+  it("adjustConfidenceForLateSession: should keep non-mastery late boosts bounded to avoid optimistic finishes", () => {
+    expect(adjustConfidenceForLateSession(0.7, 80, "cet6")).toBeLessThanOrEqual(0.715);
+    expect(adjustConfidenceForLateSession(0.7, 80, "ielts")).toBeLessThanOrEqual(0.726);
+    expect(adjustConfidenceForLateSession(0.7, 80, "gre")).toBeLessThanOrEqual(0.737);
   });
 
   it("adjustConfidenceForLateSession: should give extra boost for sustained gre mastery", () => {
@@ -405,7 +580,7 @@ describe("vocab-test engine", () => {
     expect(guarded).toBeLessThan(3400);
   });
 
-  it("applyEstimatedVocabGuardrail: should clamp stable low-band early finishes even when current level already converged to cet4", () => {
+  it("applyEstimatedVocabGuardrail: should keep stable authentic cet4 finishes inside an upper cet4 band", () => {
     const answers = Array.from({ length: 81 }).map((_, idx) =>
       answer({
         questionId: `q-cet4-stable-${idx}`,
@@ -426,9 +601,9 @@ describe("vocab-test engine", () => {
       answers,
     });
 
-    expect(guarded).toBeGreaterThanOrEqual(3200);
-    expect(guarded).toBeLessThanOrEqual(3300);
-    expect(guarded).toBeLessThan(3400);
+    expect(guarded).toBeGreaterThanOrEqual(3600);
+    expect(guarded).toBeLessThanOrEqual(3900);
+    expect(guarded).toBeLessThan(4000);
   });
 
   it("applyEstimatedVocabGuardrail: should clamp cautious cet6 early finishes to the lower mid-band", () => {
@@ -796,6 +971,102 @@ describe("vocab-test engine", () => {
     expect(adjusted.estimatedVocab).toBeLessThanOrEqual(9600);
   });
 
+  it("applyFinalLevelPriorityAdjustment: should lift stable late cet4 sessions out of the floor band", () => {
+    const answers = [
+      ...stageWarmup("late-cet4-warmup", "cet4", 24),
+      ...stageBoundary("late-cet4-boundary", "cet4", 34),
+      ...stageChallenge("late-cet4-challenge", "cet6", 24),
+      ...stageLateDrift("late-cet4-drift", "cet4", 28),
+    ];
+
+    const adjusted = applyFinalLevelPriorityAdjustment({
+      questionCount: 110,
+      confidence: 0.9005,
+      estimatedVocab: 3240,
+      recommendedLevel: "cet4",
+      currentLevel: "cet4",
+      startedLevel: "cet4",
+      answers,
+    });
+
+    expect(adjusted.recommendedLevel).toBe("cet4");
+    expect(adjusted.estimatedVocab).toBeGreaterThanOrEqual(3800);
+    expect(adjusted.estimatedVocab).toBeLessThanOrEqual(4300);
+  });
+
+  it("applyFinalLevelPriorityAdjustment: should lift late cet4 finishes even when current level is still one band high", () => {
+    const answers = [
+      ...stageWarmup("late-cet4-mismatch-warmup", "cet4", 26),
+      ...stageBoundary("late-cet4-mismatch-boundary", "cet4", 30),
+      ...stageChallenge("late-cet4-mismatch-challenge", "cet6", 30),
+      ...stageLateDrift("late-cet4-mismatch-drift", "cet4", 23),
+    ];
+
+    const adjusted = applyFinalLevelPriorityAdjustment({
+      questionCount: 109,
+      confidence: 0.9001,
+      estimatedVocab: 3240,
+      recommendedLevel: "cet4",
+      currentLevel: "cet6",
+      startedLevel: "cet4",
+      answers,
+    });
+
+    expect(adjusted.recommendedLevel).toBe("cet4");
+    expect(adjusted.estimatedVocab).toBeGreaterThanOrEqual(3800);
+    expect(adjusted.estimatedVocab).toBeLessThanOrEqual(4300);
+  });
+
+  it("applyFinalLevelPriorityAdjustment: should cap moderately confident gre finals below 10.4k", () => {
+    const answers = [
+      ...stageWarmup("late-gre-warmup", "ielts", 10),
+      ...buildStageAnswers({
+        prefix: "late-gre-boundary",
+        level: "gre",
+        count: 52,
+        responseAt: (index) => {
+          if (index % 11 === 0) {
+            return { responseType: "unknown", isCorrect: false, knew: false, selectedMeaning: null };
+          }
+          if (index % 9 === 0) {
+            return { responseType: "unsure", isCorrect: false, knew: true, selectedMeaning: null };
+          }
+          if (index % 7 === 0) {
+            return { responseType: "option", isCorrect: false, knew: true, selectedMeaning: "错误释义" };
+          }
+          return { responseType: "option", isCorrect: true, knew: true, selectedMeaning: "正确释义" };
+        },
+      }),
+      ...buildStageAnswers({
+        prefix: "late-gre-tail",
+        level: "gre",
+        count: 14,
+        responseAt: (index) => {
+          if (index % 6 === 0) {
+            return { responseType: "unknown", isCorrect: false, knew: false, selectedMeaning: null };
+          }
+          if (index % 5 === 0) {
+            return { responseType: "option", isCorrect: false, knew: true, selectedMeaning: "错误释义" };
+          }
+          return { responseType: "option", isCorrect: true, knew: true, selectedMeaning: "正确释义" };
+        },
+      }),
+    ];
+
+    const adjusted = applyFinalLevelPriorityAdjustment({
+      questionCount: 76,
+      confidence: 0.9009,
+      estimatedVocab: 10777,
+      recommendedLevel: "gre",
+      currentLevel: "gre",
+      startedLevel: "gre",
+      answers,
+    });
+
+    expect(adjusted.recommendedLevel).toBe("gre");
+    expect(adjusted.estimatedVocab).toBeLessThanOrEqual(10400);
+  });
+
   it("resolveGuardedEstimatedVocab: should re-run guardrail into the softer lower band when evidence stays weak", () => {
     const answers = Array.from({ length: 80 }).map((_, idx) =>
       answer({
@@ -823,6 +1094,182 @@ describe("vocab-test engine", () => {
     expect(resolved.estimatedVocab).toBeLessThan(3400);
   });
 
+  it("resolveGuardedEstimatedVocab: should cap moderately confident gre finishes below the top gre tail", () => {
+    const answers = Array.from({ length: 76 }).map((_, idx) =>
+      answer({
+        questionId: `q-gre-cap-${idx}`,
+        level: idx % 3 === 0 ? "gre" : "ielts",
+        responseType: idx % 11 === 0 ? "unknown" : idx % 9 === 0 ? "unsure" : "option",
+        isCorrect: idx % 11 !== 0 && idx % 7 !== 0,
+        knew: idx % 11 !== 0,
+        selectedMeaning:
+          idx % 11 === 0 ? null : idx % 7 === 0 ? "错误释义" : "正确释义",
+      })
+    );
+
+    const resolved = resolveGuardedEstimatedVocab({
+      questionCount: 76,
+      estimatedVocab: 10880,
+      confidence: 0.906,
+      currentLevel: "gre",
+      answers,
+    });
+
+    expect(resolved.recommendedLevel).toBe("gre");
+    expect(resolved.estimatedVocab).toBeLessThanOrEqual(10400);
+  });
+
+  it("persona simulation: should keep a cet4 user inside the cet4 band", () => {
+    const answers = [
+      ...stageWarmup("persona-cet4-warmup", "cet4", 20),
+      ...stageBoundary("persona-cet4-boundary", "cet4", 28),
+      ...stageChallenge("persona-cet4-challenge", "cet6", 20),
+      ...stageLateDrift("persona-cet4-late", "cet4", 18),
+    ];
+
+    const result = evaluateSessionOutcome({
+      answers,
+      currentLevel: "cet4",
+      startedLevel: "cet4",
+    });
+
+    expect(result.recommendedLevel).toBe("cet4");
+    expect(result.confidence).toBeLessThan(0.92);
+    expect(result.estimatedVocab).toBeLessThan(4500);
+  });
+
+  it("persona simulation: should keep a cet6 user inside the cet6 band", () => {
+    const answers = [
+      ...stageWarmup("persona-cet6-warmup", "cet4", 12),
+      ...buildStageAnswers({
+        prefix: "persona-cet6-boundary",
+        level: "cet6",
+        count: 52,
+        responseAt: (index) => {
+          if (index % 10 === 0) {
+            return { responseType: "unknown", isCorrect: false, knew: false, selectedMeaning: null };
+          }
+          if (index % 7 === 0) {
+            return { responseType: "unsure", isCorrect: false, knew: true, selectedMeaning: null };
+          }
+          if (index % 4 === 0) {
+            return { responseType: "option", isCorrect: false, knew: true, selectedMeaning: "错误释义" };
+          }
+          return { responseType: "option", isCorrect: true, knew: true, selectedMeaning: "【v.】评估；评价；进行判断" };
+        },
+      }),
+      ...buildStageAnswers({
+        prefix: "persona-cet6-challenge",
+        level: "ielts",
+        count: 16,
+        responseAt: (index) => {
+          if (index % 3 === 0) {
+            return { responseType: "unknown", isCorrect: false, knew: false, selectedMeaning: null };
+          }
+          if (index % 5 === 0) {
+            return { responseType: "unsure", isCorrect: false, knew: true, selectedMeaning: null };
+          }
+          if (index % 15 === 0) {
+            return { responseType: "option", isCorrect: true, knew: true, selectedMeaning: "【v.】评估；评价；进行判断" };
+          }
+          return { responseType: "option", isCorrect: false, knew: true, selectedMeaning: "错误释义" };
+        },
+      }),
+      ...buildStageAnswers({
+        prefix: "persona-cet6-late",
+        level: "cet6",
+        count: 12,
+        responseAt: (index) => {
+          if (index % 6 === 0) {
+            return { responseType: "unknown", isCorrect: false, knew: false, selectedMeaning: null };
+          }
+          if (index % 3 === 0) {
+            return { responseType: "option", isCorrect: false, knew: true, selectedMeaning: "错误释义" };
+          }
+          return { responseType: "option", isCorrect: true, knew: true, selectedMeaning: "【v.】评估；评价；进行判断" };
+        },
+      }),
+    ];
+
+    const result = evaluateSessionOutcome({
+      answers,
+      currentLevel: "cet6",
+      startedLevel: "cet4",
+    });
+
+    expect(result.recommendedLevel).toBe("cet6");
+    expect(result.confidence).toBeLessThan(0.94);
+    expect(result.estimatedVocab).toBeGreaterThanOrEqual(4500);
+    expect(result.estimatedVocab).toBeLessThan(6000);
+  });
+
+  it("persona simulation: should keep an ielts user inside the ielts band", () => {
+    const answers = [
+      ...stageWarmup("persona-ielts-warmup", "cet6", 14),
+      ...stageBoundary("persona-ielts-boundary", "ielts", 34),
+      ...stageChallenge("persona-ielts-challenge", "gre", 18),
+      ...stageLateDrift("persona-ielts-late", "ielts", 16),
+    ];
+
+    const result = evaluateSessionOutcome({
+      answers,
+      currentLevel: "ielts",
+      startedLevel: "cet6",
+    });
+
+    expect(result.recommendedLevel).toBe("ielts");
+    expect(result.confidence).toBeLessThan(0.95);
+    expect(result.estimatedVocab).toBeGreaterThanOrEqual(6000);
+    expect(result.estimatedVocab).toBeLessThan(8000);
+  });
+
+  it("persona simulation: should keep a gre user inside the gre band", () => {
+    const answers = [
+      ...stageWarmup("persona-gre-warmup", "ielts", 8),
+      ...buildStageAnswers({
+        prefix: "persona-gre-boundary",
+        level: "gre",
+        count: 110,
+        responseAt: (index) => {
+          if (index % 14 === 0) {
+            return { responseType: "unknown", isCorrect: false, knew: false, selectedMeaning: null };
+          }
+          if (index % 18 === 0) {
+            return { responseType: "unsure", isCorrect: false, knew: true, selectedMeaning: null };
+          }
+          if (index % 16 === 0) {
+            return { responseType: "option", isCorrect: false, knew: true, selectedMeaning: "错误释义" };
+          }
+          return { responseType: "option", isCorrect: true, knew: true, selectedMeaning: "正确释义" };
+        },
+      }),
+      ...buildStageAnswers({
+        prefix: "persona-gre-late-gre",
+        level: "gre",
+        count: 12,
+        responseAt: (index) => {
+          if (index % 9 === 0) {
+            return { responseType: "unknown", isCorrect: false, knew: false, selectedMeaning: null };
+          }
+          if (index % 8 === 0) {
+            return { responseType: "option", isCorrect: false, knew: true, selectedMeaning: "错误释义" };
+          }
+          return { responseType: "option", isCorrect: true, knew: true, selectedMeaning: "正确释义" };
+        },
+      }),
+    ];
+
+    const result = evaluateSessionOutcome({
+      answers,
+      currentLevel: "gre",
+      startedLevel: "gre",
+    });
+
+    expect(result.recommendedLevel).toBe("gre");
+    expect(result.confidence).toBeGreaterThanOrEqual(0.4);
+    expect(result.estimatedVocab).toBeGreaterThanOrEqual(8000);
+  });
+
   it("getSessionStartLevel: should use conservative history prior", () => {
     expect(getSessionStartLevel(undefined)).toBe("cet4");
     expect(getSessionStartLevel(5000)).toBe("cet4");
@@ -838,7 +1285,7 @@ describe("vocab-test engine", () => {
     expect(next).toBe("cet6");
   });
 
-  it("getNextLevelAfterCalibration: should jump after two consecutive early correct answers", () => {
+  it("getNextLevelAfterCalibration: should wait for a third consecutive early correct answer before promoting", () => {
     const next = getNextLevelAfterCalibration(
       state({
         startedLevel: "gre",
@@ -847,6 +1294,23 @@ describe("vocab-test engine", () => {
         answers: [answer({ questionId: "q-0", level: "cet6", isCorrect: true })],
       }),
       answer({ questionId: "q-1", level: "cet6", isCorrect: true })
+    );
+
+    expect(next).toBe("cet6");
+  });
+
+  it("getNextLevelAfterCalibration: should promote after three consecutive early correct answers", () => {
+    const next = getNextLevelAfterCalibration(
+      state({
+        startedLevel: "gre",
+        questionCount: 2,
+        currentLevel: "cet6",
+        answers: [
+          answer({ questionId: "q-0", level: "cet6", isCorrect: true }),
+          answer({ questionId: "q-1", level: "cet6", isCorrect: true }),
+        ],
+      }),
+      answer({ questionId: "q-2", level: "cet6", isCorrect: true })
     );
 
     expect(next).toBe("ielts");
