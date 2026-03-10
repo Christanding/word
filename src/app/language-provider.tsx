@@ -35,10 +35,12 @@ export function LanguageProvider({
   }, []);
 
   const value = useMemo<LanguageContextValue>(() => {
+    const dictionary = translations[language] as Record<TranslationKey, string>;
+
     return {
       language,
       setLanguage,
-      t: (key: TranslationKey) => translations[language][key],
+      t: (key: TranslationKey) => dictionary[key],
     };
   }, [language, setLanguage]);
 
