@@ -133,6 +133,7 @@ describe.sequential("auth routes", () => {
       role: "user",
     });
     expect(session.userId).toBeTruthy();
+    expect(response.headers.get("set-cookie")).not.toContain("Secure");
   });
 
   it("rejects duplicate registration emails", async () => {
@@ -178,6 +179,7 @@ describe.sequential("auth routes", () => {
       role: "admin",
     });
     expect(session.userId).toBe(adminEmail);
+    expect(response.headers.get("set-cookie")).not.toContain("Secure");
   });
 
   it("allows a registered user to log in with the stored password hash", async () => {

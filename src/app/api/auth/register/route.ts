@@ -3,7 +3,7 @@ import { sealData } from "iron-session";
 import bcrypt from "bcryptjs";
 import { getDBAdapter } from "@/lib/db";
 import type { User } from "@/lib/models";
-import type { SessionData } from "@/lib/session";
+import { createSessionCookieOptions, type SessionData } from "@/lib/session";
 
 const TEST_ADMIN_EMAIL = "admin@example.com";
 const TEST_SESSION_SECRET = "test-session-secret-for-e2e-tests";
@@ -75,13 +75,7 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     );
 
-    response.cookies.set("word_vocab_session", sealedData, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      maxAge: 60 * 60 * 24 * 7,
-      sameSite: "lax",
-      path: "/",
-    });
+    response.cookies.set("word_vocab_session", sealedData, createSessionCookieOptions(request));
 
     return response;
   } catch (error) {

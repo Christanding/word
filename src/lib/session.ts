@@ -1,3 +1,5 @@
+import type { NextRequest } from "next/server";
+
 // Session data type
 export interface SessionData {
   isLoggedIn: boolean;
@@ -18,11 +20,28 @@ export const sessionOptions = {
   password: getSessionSecret(),
   cookieOptions: {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: false,
     maxAge: 60 * 60 * 24 * 7, // 7 days
     sameSite: "lax" as const,
+    path: "/",
   },
 };
+
+function isHttpsRequest(request: Pick<NextRequest, "headers" | "nextUrl">): boolean {
+  const forwardedProto = request.headers.get("x-forwarded-proto");
+  if (forwardedProto) {
+    return forwardedProto.split(",")[0]?.trim() === "https";
+  }
+
+  return request.nextUrl.protocol === "https:";
+}
+
+export function createSessionCookieOptions(request: Pick<NextRequest, "headers" | "nextUrl">) {
+  return {
+    ...sessionOptions.cookieOptions,
+    secure: isHttpsRequest(request),
+  };
+}
 
 // Helper to check if user is logged in (for server components)
 export async function getSessionData(): Promise<SessionData | null> {

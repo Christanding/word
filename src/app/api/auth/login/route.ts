@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sealData } from "iron-session";
 import bcrypt from "bcryptjs";
-import type { SessionData } from "@/lib/session";
+import { createSessionCookieOptions, type SessionData } from "@/lib/session";
 import { getDBAdapter } from "@/lib/db";
 import type { User } from "@/lib/models";
 
@@ -46,13 +46,7 @@ export async function POST(request: NextRequest) {
         });
 
         const response = NextResponse.json({ success: true });
-        response.cookies.set("word_vocab_session", sealedData, {
-          httpOnly: true,
-          secure: process.env.NODE_ENV === "production",
-          maxAge: 60 * 60 * 24 * 7,
-          sameSite: "lax",
-          path: "/",
-        });
+        response.cookies.set("word_vocab_session", sealedData, createSessionCookieOptions(request));
 
         return response;
       }
@@ -90,13 +84,7 @@ export async function POST(request: NextRequest) {
     });
 
     const response = NextResponse.json({ success: true });
-    response.cookies.set("word_vocab_session", sealedData, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      maxAge: 60 * 60 * 24 * 7,
-      sameSite: "lax",
-      path: "/",
-    });
+    response.cookies.set("word_vocab_session", sealedData, createSessionCookieOptions(request));
 
     return response;
   } catch (error) {
