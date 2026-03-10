@@ -1,0 +1,26 @@
+{
+  "version": "2.0",
+  "envId": "chris-7-4gh5omxl96f5b617",
+  "functionRoot": "functions",
+  "functions": [
+    {
+      "name": "nextjs-server",
+      "runtime": "Nodejs16.13",
+      "handler": "index.main",
+      "timeout": 30,
+      "envVariables": {
+        "SESSION_SECRET": "your-session-secret",
+        "ADMIN_EMAIL": "admin@example.com",
+        "ADMIN_PASSWORD_HASH": "your-bcrypt-password-hash",
+        "MOCK_OCR": "0",
+        "MOCK_LLM": "0",
+        "TENCENT_SECRET_ID": "your-tencent-secret-id",
+        "TENCENT_SECRET_KEY": "your-tencent-secret-key",
+        "TENCENT_REGION": "ap-guangzhou",
+        "DASHSCOPE_API_KEY": "your-dashscope-api-key",
+        "DASHSCOPE_MODEL": "qwen3.5-plus",
+        "WORKER_SECRET": "your-worker-secret"
+      }
+    }
+  ]
+}

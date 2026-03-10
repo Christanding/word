@@ -1,0 +1,49 @@
+{
+  "name": "word",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "node scripts/dev-safe.mjs",
+    "dev:next": "next dev --webpack",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "e2e": "playwright test",
+    "e2e:ui": "playwright test --ui"
+  },
+  "dependencies": {
+    "@cloudbase/node-sdk": "^3.18.0",
+    "bcryptjs": "^3.0.3",
+    "iron-session": "^8.0.4",
+    "mammoth": "^1.11.0",
+    "next": "16.1.6",
+    "pdfjs-dist": "^5.4.624",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "sharp": "^0.34.5",
+    "tencentcloud-sdk-nodejs": "^4.1.188",
+    "wink-lemmatizer": "^3.0.4",
+    "xlsx": "^0.18.5",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "@tailwindcss/postcss": "^4",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/bcryptjs": "^3.0.0",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^5.1.4",
+    "dotenv": "^17.3.1",
+    "eslint": "^9",
+    "eslint-config-next": "16.1.6",
+    "jsdom": "^28.1.0",
+    "tailwindcss": "^4",
+    "typescript": "^5",
+    "vitest": "^4.0.18"
+  }
+}

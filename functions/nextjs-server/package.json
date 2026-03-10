@@ -1,0 +1,14 @@
+{
+  "name": "nextjs-server",
+  "version": "1.0.0",
+  "description": "Next.js server for CloudBase",
+  "main": "index.js",
+  "scripts": {
+    "start": "next start"
+  },
+  "dependencies": {
+    "next": "^16.0.0",
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0"
+  }
+}

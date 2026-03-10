@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f6f1e8;
+  --foreground: #201b18;
+  --surface: rgba(255, 252, 247, 0.9);
+  --surface-strong: #fffdf8;
+  --line-soft: rgba(76, 63, 54, 0.14);
+  --line-strong: rgba(54, 44, 38, 0.24);
+  --accent-ink: #3f312b;
+  --accent-oxblood: #6e3b33;
+  --accent-olive: #5a6350;
+  --shadow-soft: 0 18px 40px -28px rgba(40, 30, 24, 0.32);
+  --shadow-card: 0 22px 60px -36px rgba(31, 24, 20, 0.28);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-eb-garamond), var(--font-noto-serif-sc), serif;
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-eb-garamond), var(--font-noto-serif-sc), serif;
+  line-height: 1.65;
+  text-rendering: optimizeLegibility;
+  background-image:
+    radial-gradient(circle at top, rgba(255, 255, 255, 0.7), transparent 32%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.46), rgba(246, 241, 232, 0.98));
+}
+
+::selection {
+  background: rgba(110, 59, 51, 0.18);
+  color: var(--foreground);
+}
+
+a {
+  transition: color 180ms ease, border-color 180ms ease, background-color 180ms ease;
+}
+
+code,
+pre,
+kbd,
+samp {
+  font-family: var(--font-mono), monospace;
+}
