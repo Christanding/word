@@ -1,7 +1,9 @@
 // Session data type
 export interface SessionData {
   isLoggedIn: boolean;
+  userId?: string;
   email?: string;
+  role?: "admin" | "user";
 }
 
 const TEST_SESSION_SECRET = "test-session-secret-for-e2e-tests";

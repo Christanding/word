@@ -131,6 +131,14 @@ export const vocabWordlistSchema = baseSchema.extend({
   ),
 });
 
+export const userSchema = baseSchema.extend({
+  type: z.literal("user"),
+  email: z.string().email(),
+  passwordHash: z.string().min(1),
+  role: z.enum(["admin", "user"]).default("user"),
+  status: z.enum(["active", "disabled"]).default("active"),
+});
+
 // Export types
 export type Document = z.infer<typeof documentSchema>;
 export type Job = z.infer<typeof jobSchema>;
@@ -142,6 +150,7 @@ export type Review = z.infer<typeof reviewSchema>;
 export type QuotaCounter = z.infer<typeof quotaCounterSchema>;
 export type VocabAssessment = z.infer<typeof vocabAssessmentSchema>;
 export type VocabWordlist = z.infer<typeof vocabWordlistSchema>;
+export type User = z.infer<typeof userSchema>;
 
 // Union type for all entities
 export type Entity =
@@ -154,7 +163,8 @@ export type Entity =
   | Review
   | QuotaCounter
   | VocabAssessment
-  | VocabWordlist;
+  | VocabWordlist
+  | User;
 export type EntityType = Entity["type"];
 
 // Helper to create base fields

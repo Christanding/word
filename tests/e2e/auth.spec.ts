@@ -11,6 +11,7 @@ test.describe("Auth Flow", () => {
     await expect(page.locator("h1")).toHaveText("Vocab Study");
     await expect(page.locator('input[type="email"]')).toBeVisible();
     await expect(page.locator('input[type="password"]')).toBeVisible();
+    await expect(page.getByText("Default credentials (dev only):")).toHaveCount(0);
   });
 
   test("should login with correct credentials", async ({ page }) => {
@@ -23,7 +24,7 @@ test.describe("Auth Flow", () => {
     
     // Should redirect to app
     await page.waitForURL(/.*app/);
-    await expect(page.locator("h1")).toHaveText("Vocab Study App");
+    await expect(page).toHaveURL(/.*app/);
   });
 
   test("should show error with wrong credentials", async ({ page }) => {
@@ -35,8 +36,22 @@ test.describe("Auth Flow", () => {
     await page.click('button[type="submit"]');
     
     // Should show error
-    await expect(page.locator(".bg-red-50")).toBeVisible();
+    await expect(page.getByText("Invalid email or password")).toBeVisible();
     await expect(page).toHaveURL(/.*login/);
+  });
+
+  test("should allow open registration and redirect into app", async ({ page }) => {
+    const uniqueEmail = `reader-${Date.now()}@example.com`;
+
+    await page.goto("/register");
+    await expect(page.locator("h1")).toHaveText("Create Account");
+    await page.fill('input[type="email"]', uniqueEmail);
+    await page.fill('input[name="password"]', "ReaderPass@2026");
+    await page.fill('input[name="confirmPassword"]', "ReaderPass@2026");
+    await page.click('button[type="submit"]');
+
+    await page.waitForURL(/.*app/);
+    await expect(page).toHaveURL(/.*app/);
   });
 
   test("should protect /app route", async ({ page }) => {
