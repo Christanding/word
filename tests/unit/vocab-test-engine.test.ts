@@ -1067,6 +1067,386 @@ describe("vocab-test engine", () => {
     expect(adjusted.estimatedVocab).toBeLessThanOrEqual(10400);
   });
 
+  it("applyFinalLevelPriorityAdjustment: should recover low-range cet4 mismatch when current level is still ielts", () => {
+    const answers = [
+      ...stageWarmup("low-range-ielts-mismatch-warmup", "cet4", 20),
+      ...stageBoundary("low-range-ielts-mismatch-boundary", "cet4", 24),
+      ...stageChallenge("low-range-ielts-mismatch-challenge", "ielts", 30),
+      ...stageLateDrift("low-range-ielts-mismatch-drift", "cet4", 24),
+    ];
+
+    const adjusted = applyFinalLevelPriorityAdjustment({
+      questionCount: 98,
+      confidence: 0.9021,
+      estimatedVocab: 3235,
+      recommendedLevel: "cet4",
+      currentLevel: "ielts",
+      startedLevel: "cet4",
+      answers,
+    });
+
+    expect(["cet4", "cet6"]).toContain(adjusted.recommendedLevel);
+    expect(adjusted.estimatedVocab).toBeGreaterThan(4000);
+    expect(adjusted.estimatedVocab).toBeLessThanOrEqual(5000);
+  });
+
+  it("applyFinalLevelPriorityAdjustment: should recover low-range cet4 mismatch just before the 95-question threshold", () => {
+    const answers = [
+      ...stageWarmup("low-range-ielts-mismatch-94-warmup", "cet4", 20),
+      ...stageBoundary("low-range-ielts-mismatch-94-boundary", "cet4", 24),
+      ...stageChallenge("low-range-ielts-mismatch-94-challenge", "ielts", 26),
+      ...stageLateDrift("low-range-ielts-mismatch-94-drift", "cet4", 24),
+    ];
+
+    const adjusted = applyFinalLevelPriorityAdjustment({
+      questionCount: 94,
+      confidence: 0.9010,
+      estimatedVocab: 3238,
+      recommendedLevel: "cet4",
+      currentLevel: "ielts",
+      startedLevel: "cet4",
+      answers,
+    });
+
+    expect(["cet4", "cet6"]).toContain(adjusted.recommendedLevel);
+    expect(adjusted.estimatedVocab).toBeGreaterThan(4000);
+    expect(adjusted.estimatedVocab).toBeLessThanOrEqual(5000);
+  });
+
+  it("applyFinalLevelPriorityAdjustment: should recover low-range cet4 mismatch before question 100 when current level is cet6", () => {
+    const answers = [
+      ...stageWarmup("low-range-cet6-mismatch-warmup", "cet4", 22),
+      ...stageBoundary("low-range-cet6-mismatch-boundary", "cet4", 24),
+      ...stageChallenge("low-range-cet6-mismatch-challenge", "cet6", 27),
+      ...stageLateDrift("low-range-cet6-mismatch-drift", "cet4", 24),
+    ];
+
+    const adjusted = applyFinalLevelPriorityAdjustment({
+      questionCount: 97,
+      confidence: 0.9009,
+      estimatedVocab: 3244,
+      recommendedLevel: "cet4",
+      currentLevel: "cet6",
+      startedLevel: "cet4",
+      answers,
+    });
+
+    expect(["cet4", "cet6"]).toContain(adjusted.recommendedLevel);
+    expect(adjusted.estimatedVocab).toBeGreaterThanOrEqual(4400);
+    expect(adjusted.estimatedVocab).toBeLessThanOrEqual(5300);
+  });
+
+  it("applyFinalLevelPriorityAdjustment: should cap early ielts inflation for mid-range users", () => {
+    const answers = [
+      ...stageWarmup("mid-range-ielts-warmup", "cet4", 16),
+      ...stageBoundary("mid-range-ielts-boundary", "cet6", 30),
+      ...stageChallenge("mid-range-ielts-challenge", "ielts", 30),
+      ...stageLateDrift("mid-range-ielts-drift", "ielts", 15),
+    ];
+
+    const adjusted = applyFinalLevelPriorityAdjustment({
+      questionCount: 91,
+      confidence: 0.9023,
+      estimatedVocab: 6239,
+      recommendedLevel: "ielts",
+      currentLevel: "ielts",
+      startedLevel: "cet4",
+      answers,
+    });
+
+    expect(["cet6", "ielts"]).toContain(adjusted.recommendedLevel);
+    expect(adjusted.estimatedVocab).toBeLessThanOrEqual(6100);
+  });
+
+  it("applyFinalLevelPriorityAdjustment: should keep upper-cet6 users from drifting too far into ielts territory", () => {
+    const answers = [
+      ...stageWarmup("upper-cet6-drift-warmup", "cet4", 16),
+      ...stageBoundary("upper-cet6-drift-boundary", "cet6", 30),
+      ...stageChallenge("upper-cet6-drift-challenge", "ielts", 24),
+      ...stageLateDrift("upper-cet6-drift-drift", "ielts", 21),
+    ];
+
+    const adjusted = applyFinalLevelPriorityAdjustment({
+      questionCount: 91,
+      confidence: 0.9041,
+      estimatedVocab: 5950,
+      recommendedLevel: "cet6",
+      currentLevel: "ielts",
+      startedLevel: "cet4",
+      answers,
+    });
+
+    expect(adjusted.recommendedLevel).toBe("cet6");
+    expect(adjusted.estimatedVocab).toBeGreaterThanOrEqual(5500);
+    expect(adjusted.estimatedVocab).toBeLessThanOrEqual(5850);
+  });
+
+  it("applyFinalLevelPriorityAdjustment: should rein in overly high upper-ielts boundary results", () => {
+    const answers = [
+      ...stageWarmup("upper-ielts-high-warmup", "cet6", 14),
+      ...stageBoundary("upper-ielts-high-boundary", "ielts", 34),
+      ...stageLateDrift("upper-ielts-high-drift", "ielts", 36),
+    ];
+
+    const adjusted = applyFinalLevelPriorityAdjustment({
+      questionCount: 84,
+      confidence: 0.901,
+      estimatedVocab: 7766,
+      recommendedLevel: "ielts",
+      currentLevel: "ielts",
+      startedLevel: "cet6",
+      answers,
+    });
+
+    expect(adjusted.recommendedLevel).toBe("ielts");
+    expect(adjusted.estimatedVocab).toBeLessThanOrEqual(7400);
+  });
+
+  it("applyFinalLevelPriorityAdjustment: should lift overly low upper-ielts boundary results", () => {
+    const answers = [
+      ...stageWarmup("upper-ielts-low-warmup", "cet6", 14),
+      ...stageBoundary("upper-ielts-low-boundary", "ielts", 34),
+      ...stageLateDrift("upper-ielts-low-drift", "ielts", 37),
+    ];
+
+    const adjusted = applyFinalLevelPriorityAdjustment({
+      questionCount: 85,
+      confidence: 0.9001,
+      estimatedVocab: 6803,
+      recommendedLevel: "ielts",
+      currentLevel: "ielts",
+      startedLevel: "cet6",
+      answers,
+    });
+
+    expect(adjusted.recommendedLevel).toBe("ielts");
+    expect(adjusted.estimatedVocab).toBeGreaterThanOrEqual(7000);
+  });
+
+  it("applyFinalLevelPriorityAdjustment: should recover collapsed mid-range users when current level is still gre", () => {
+    const answers = [
+      ...stageWarmup("mid-range-gre-collapse-warmup", "cet4", 16),
+      ...stageBoundary("mid-range-gre-collapse-boundary", "cet6", 24),
+      ...stageChallenge("mid-range-gre-collapse-challenge", "gre", 24),
+      ...stageLateDrift("mid-range-gre-collapse-drift", "gre", 16),
+    ];
+
+    const adjusted = applyFinalLevelPriorityAdjustment({
+      questionCount: 80,
+      confidence: 0.9010,
+      estimatedVocab: 3226,
+      recommendedLevel: "cet4",
+      currentLevel: "gre",
+      startedLevel: "cet4",
+      answers,
+    });
+
+    expect(["cet6", "ielts"]).toContain(adjusted.recommendedLevel);
+    expect(adjusted.estimatedVocab).toBeGreaterThanOrEqual(5200);
+    expect(adjusted.estimatedVocab).toBeLessThanOrEqual(6200);
+  });
+
+  it("applyFinalLevelPriorityAdjustment: should lift flattened high-ielts results when current level is already gre", () => {
+    const answers = [
+      ...stageWarmup("high-ielts-gre-warmup", "cet6", 12),
+      ...stageBoundary("high-ielts-gre-boundary", "ielts", 28),
+      ...stageChallenge("high-ielts-gre-challenge", "gre", 26),
+      ...stageLateDrift("high-ielts-gre-drift", "gre", 16),
+    ];
+
+    const adjusted = applyFinalLevelPriorityAdjustment({
+      questionCount: 82,
+      confidence: 0.9082,
+      estimatedVocab: 6542,
+      recommendedLevel: "ielts",
+      currentLevel: "gre",
+      startedLevel: "cet6",
+      answers,
+    });
+
+    expect(adjusted.recommendedLevel).toBe("ielts");
+    expect(adjusted.estimatedVocab).toBeGreaterThanOrEqual(7000);
+    expect(adjusted.estimatedVocab).toBeLessThanOrEqual(7800);
+  });
+
+  it("applyFinalLevelPriorityAdjustment: should recover gre-to-ielts samples that fall just below the old confidence gap", () => {
+    const answers = [
+      ...stageWarmup("gre-ielts-gap-warmup", "cet6", 12),
+      ...stageBoundary("gre-ielts-gap-boundary", "ielts", 28),
+      ...stageChallenge("gre-ielts-gap-challenge", "gre", 26),
+      ...stageLateDrift("gre-ielts-gap-drift", "gre", 14),
+    ];
+
+    const adjusted = applyFinalLevelPriorityAdjustment({
+      questionCount: 80,
+      confidence: 0.9039,
+      estimatedVocab: 6496,
+      recommendedLevel: "ielts",
+      currentLevel: "gre",
+      startedLevel: "cet6",
+      answers,
+    });
+
+    expect(adjusted.recommendedLevel).toBe("ielts");
+    expect(adjusted.estimatedVocab).toBeGreaterThanOrEqual(7000);
+    expect(adjusted.estimatedVocab).toBeLessThanOrEqual(7800);
+  });
+
+  it("applyFinalLevelPriorityAdjustment: should keep 9k gre-boundary samples above the low-ielts floor", () => {
+    const answers = [
+      ...stageWarmup("gre-ielts-9k-gap-warmup", "ielts", 12),
+      ...stageBoundary("gre-ielts-9k-gap-boundary", "gre", 36),
+      ...stageChallenge("gre-ielts-9k-gap-challenge", "gre", 24),
+      ...stageLateDrift("gre-ielts-9k-gap-drift", "gre", 12),
+    ];
+
+    const adjusted = applyFinalLevelPriorityAdjustment({
+      questionCount: 80,
+      confidence: 0.9035,
+      estimatedVocab: 7708,
+      recommendedLevel: "ielts",
+      currentLevel: "gre",
+      startedLevel: "ielts",
+      answers,
+    });
+
+    expect(adjusted.recommendedLevel).toBe("ielts");
+    expect(adjusted.estimatedVocab).toBeGreaterThanOrEqual(8400);
+    expect(adjusted.estimatedVocab).toBeLessThanOrEqual(9200);
+  });
+
+  it("applyFinalLevelPriorityAdjustment: should keep lower upper-ielts samples out of the pre-gre transition band", () => {
+    const answers = [
+      ...stageWarmup("pre-gre-low-threshold-warmup", "cet6", 16),
+      ...stageBoundary("pre-gre-low-threshold-boundary", "gre", 34),
+      ...stageLateDrift("pre-gre-low-threshold-drift", "ielts", 33),
+    ];
+
+    const adjusted = applyFinalLevelPriorityAdjustment({
+      questionCount: 84,
+      confidence: 0.9010,
+      estimatedVocab: 8817,
+      recommendedLevel: "gre",
+      currentLevel: "ielts",
+      startedLevel: "cet6",
+      answers,
+    });
+
+    expect(adjusted.recommendedLevel).toBe("ielts");
+    expect(adjusted.estimatedVocab).toBeLessThanOrEqual(7400);
+  });
+
+  it("applyFinalLevelPriorityAdjustment: should keep pre-gre transition users below gre until evidence is stronger", () => {
+    const answers = [
+      ...stageWarmup("pre-gre-transition-warmup", "ielts", 16),
+      ...stageBoundary("pre-gre-transition-boundary", "gre", 34),
+      ...stageLateDrift("pre-gre-transition-drift", "ielts", 33),
+    ];
+
+    const adjusted = applyFinalLevelPriorityAdjustment({
+      questionCount: 83,
+      confidence: 0.9018,
+      estimatedVocab: 8817,
+      recommendedLevel: "gre",
+      currentLevel: "ielts",
+      startedLevel: "cet6",
+      answers,
+    });
+
+    expect(adjusted.recommendedLevel).toBe("ielts");
+    expect(adjusted.estimatedVocab).toBeGreaterThanOrEqual(7600);
+    expect(adjusted.estimatedVocab).toBeLessThanOrEqual(7999);
+  });
+
+  it("applyFinalLevelPriorityAdjustment: should keep 8k boundary users out of gre even when raw estimate slightly exceeds 9k", () => {
+    const answers = [
+      ...stageWarmup("pre-gre-8k-boundary-warmup", "ielts", 16),
+      ...stageBoundary("pre-gre-8k-boundary-boundary", "gre", 34),
+      ...stageLateDrift("pre-gre-8k-boundary-drift", "ielts", 33),
+    ];
+
+    const adjusted = applyFinalLevelPriorityAdjustment({
+      questionCount: 83,
+      confidence: 0.9013,
+      estimatedVocab: 9103,
+      recommendedLevel: "gre",
+      currentLevel: "ielts",
+      startedLevel: "cet4",
+      answers,
+    });
+
+    expect(adjusted.recommendedLevel).toBe("ielts");
+    expect(adjusted.estimatedVocab).toBeGreaterThanOrEqual(7600);
+    expect(adjusted.estimatedVocab).toBeLessThanOrEqual(8200);
+  });
+
+  it("applyFinalLevelPriorityAdjustment: should smooth high-confidence gre-boundary users back above the ielts floor", () => {
+    const answers = [
+      ...stageWarmup("gre-boundary-recovery-warmup", "ielts", 12),
+      ...stageBoundary("gre-boundary-recovery-boundary", "gre", 36),
+      ...stageChallenge("gre-boundary-recovery-challenge", "gre", 24),
+      ...stageLateDrift("gre-boundary-recovery-drift", "gre", 12),
+    ];
+
+    const adjusted = applyFinalLevelPriorityAdjustment({
+      questionCount: 84,
+      confidence: 0.9126,
+      estimatedVocab: 7003,
+      recommendedLevel: "ielts",
+      currentLevel: "gre",
+      startedLevel: "ielts",
+      answers,
+    });
+
+    expect(adjusted.estimatedVocab).toBeGreaterThanOrEqual(8200);
+    expect(adjusted.estimatedVocab).toBeLessThanOrEqual(9000);
+  });
+
+  it("applyFinalLevelPriorityAdjustment: should push later gre-boundary recoveries into the upper transition band", () => {
+    const answers = [
+      ...stageWarmup("gre-boundary-late-warmup", "ielts", 12),
+      ...stageBoundary("gre-boundary-late-boundary", "gre", 36),
+      ...stageChallenge("gre-boundary-late-challenge", "gre", 24),
+      ...stageLateDrift("gre-boundary-late-drift", "gre", 12),
+    ];
+
+    const adjusted = applyFinalLevelPriorityAdjustment({
+      questionCount: 84,
+      confidence: 0.9126,
+      estimatedVocab: 7003,
+      recommendedLevel: "ielts",
+      currentLevel: "gre",
+      startedLevel: "ielts",
+      answers,
+    });
+
+    expect(adjusted.estimatedVocab).toBeGreaterThanOrEqual(8700);
+    expect(adjusted.estimatedVocab).toBeLessThanOrEqual(9200);
+  });
+
+  it("applyFinalLevelPriorityAdjustment: should lift late stable gre results above the 8.5k boundary floor", () => {
+    const answers = [
+      ...stageWarmup("late-stable-gre-warmup", "ielts", 12),
+      ...stageBoundary("late-stable-gre-boundary", "gre", 36),
+      ...stageChallenge("late-stable-gre-challenge", "gre", 24),
+      ...stageLateDrift("late-stable-gre-drift", "gre", 12),
+    ];
+
+    const adjusted = applyFinalLevelPriorityAdjustment({
+      questionCount: 84,
+      confidence: 0.9126,
+      estimatedVocab: 8650,
+      recommendedLevel: "gre",
+      currentLevel: "gre",
+      startedLevel: "ielts",
+      answers,
+    });
+
+    expect(adjusted.recommendedLevel).toBe("gre");
+    expect(adjusted.estimatedVocab).toBeGreaterThanOrEqual(8700);
+    expect(adjusted.estimatedVocab).toBeLessThanOrEqual(9200);
+  });
+
   it("resolveGuardedEstimatedVocab: should re-run guardrail into the softer lower band when evidence stays weak", () => {
     const answers = Array.from({ length: 80 }).map((_, idx) =>
       answer({

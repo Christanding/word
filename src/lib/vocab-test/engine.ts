@@ -92,10 +92,21 @@ type SoftTargetBand = {
 const CET4_SOFT_TARGET_BAND: SoftTargetBand = { min: 3200, max: 3300 };
 const CET4_STABLE_TARGET_BAND: SoftTargetBand = { min: 3600, max: 3900 };
 const CET4_LATE_RECOVERY_BAND: SoftTargetBand = { min: 3800, max: 4300 };
+const CET4_TO_CET6_MISMATCH_RECOVERY_BAND: SoftTargetBand = { min: 4400, max: 5300 };
+const CET4_TO_IELTS_MISMATCH_RECOVERY_BAND: SoftTargetBand = { min: 4000, max: 5000 };
+const CET4_TO_GRE_COLLAPSE_RECOVERY_BAND: SoftTargetBand = { min: 5200, max: 6200 };
 const CET6_SOFT_TARGET_BAND: SoftTargetBand = { min: 4700, max: 4800 };
 const IELTS_SOFT_TARGET_BAND: SoftTargetBand = { min: 7000, max: 7600 };
+const IELTS_UPPER_BOUNDARY_BAND: SoftTargetBand = { min: 7000, max: 7400 };
+const IELTS_HIGH_RECOVERY_BAND: SoftTargetBand = { min: 7000, max: 7800 };
+const IELTS_GRE_HYSTERESIS_RECOVERY_BAND: SoftTargetBand = { min: 8400, max: 9100 };
+const IELTS_PRE_GRE_TRANSITION_BAND: SoftTargetBand = { min: 7600, max: 7990 };
 const GRE_LATE_RECOVERY_BAND: SoftTargetBand = { min: 9000, max: 9600 };
+const GRE_LATE_STABLE_ENTRY_BAND: SoftTargetBand = { min: 8700, max: 9200 };
 const GRE_MODERATE_CONFIDENCE_CAP = 10400;
+const MID_RANGE_IELTS_EARLY_CAP = 5990;
+const CET6_UPPER_DRIFT_CAP = 5850;
+const GRE_EARLY_ENTRY_CAP = 8200;
 const EARLY_GUARDRAIL_BASE_FACTOR: Record<VocabLevel, number> = {
   cet4: 0.52,
   cet6: 0.6,
@@ -625,6 +636,290 @@ export function applyFinalLevelPriorityAdjustment(
     recentLevelAnswers.length > 0
       ? recentLevelAnswers.reduce((sum, answer) => sum + scoreAnswer(answer), 0) / recentLevelAnswers.length
       : 0.5;
+
+  if (
+    input.questionCount >= 85 &&
+    input.startedLevel === "cet4" &&
+    input.currentLevel === "ielts" &&
+    input.recommendedLevel === "cet4" &&
+    input.confidence >= 0.9 &&
+    input.estimatedVocab < 3600
+  ) {
+    const estimatedVocab = getSoftTargetInBand(
+      input,
+      CET4_TO_IELTS_MISMATCH_RECOVERY_BAND,
+      recentAverageScore,
+    );
+    return {
+      estimatedVocab,
+      recommendedLevel: getRecommendedLevel(estimatedVocab),
+    };
+  }
+
+  if (
+    input.questionCount >= 85 &&
+    input.questionCount < 100 &&
+    input.startedLevel === "cet4" &&
+    input.currentLevel === "cet6" &&
+    input.recommendedLevel === "cet4" &&
+    input.confidence >= 0.9 &&
+    input.estimatedVocab < 3600
+  ) {
+    const estimatedVocab = getSoftTargetInBand(
+      input,
+      CET4_TO_CET6_MISMATCH_RECOVERY_BAND,
+      recentAverageScore,
+    );
+    return {
+      estimatedVocab,
+      recommendedLevel: getRecommendedLevel(estimatedVocab),
+    };
+  }
+
+  if (
+    input.questionCount >= 75 &&
+    input.questionCount < 90 &&
+    input.startedLevel === "cet4" &&
+    input.currentLevel === "gre" &&
+    input.recommendedLevel === "cet4" &&
+    input.confidence >= 0.9 &&
+    input.estimatedVocab < 3600
+  ) {
+    const estimatedVocab = getSoftTargetInBand(
+      input,
+      CET4_TO_GRE_COLLAPSE_RECOVERY_BAND,
+      recentAverageScore,
+    );
+    return {
+      estimatedVocab,
+      recommendedLevel: getRecommendedLevel(estimatedVocab),
+    };
+  }
+
+  if (
+    input.questionCount >= 85 &&
+    input.questionCount < 105 &&
+    input.startedLevel === "cet4" &&
+    input.currentLevel === "ielts" &&
+    input.recommendedLevel === "ielts" &&
+    input.confidence < 0.905 &&
+    input.estimatedVocab > MID_RANGE_IELTS_EARLY_CAP &&
+    input.estimatedVocab < 6500
+  ) {
+    return {
+      estimatedVocab: MID_RANGE_IELTS_EARLY_CAP,
+      recommendedLevel: getRecommendedLevel(MID_RANGE_IELTS_EARLY_CAP),
+    };
+  }
+
+  if (
+    input.questionCount >= 88 &&
+    input.questionCount < 95 &&
+    input.startedLevel === "cet4" &&
+    input.currentLevel === "ielts" &&
+    input.recommendedLevel === "cet6" &&
+    input.confidence < 0.905 &&
+    input.estimatedVocab > CET6_UPPER_DRIFT_CAP
+  ) {
+    return {
+      estimatedVocab: CET6_UPPER_DRIFT_CAP,
+      recommendedLevel: "cet6",
+    };
+  }
+
+  if (
+    input.questionCount >= 80 &&
+    input.questionCount < 90 &&
+    input.currentLevel === "gre" &&
+    input.recommendedLevel === "ielts" &&
+    input.confidence >= 0.91 &&
+    input.estimatedVocab >= 6800 &&
+    input.estimatedVocab < 7600
+  ) {
+    const estimatedVocab = getSoftTargetInBand(
+      input,
+      IELTS_GRE_HYSTERESIS_RECOVERY_BAND,
+      recentAverageScore,
+    );
+    return {
+      estimatedVocab,
+      recommendedLevel: getRecommendedLevel(estimatedVocab),
+    };
+  }
+
+  if (
+    input.questionCount >= 80 &&
+    input.questionCount < 90 &&
+    input.currentLevel === "ielts" &&
+    input.recommendedLevel === "ielts" &&
+    input.confidence < 0.905 &&
+    (input.estimatedVocab < 7000 || input.estimatedVocab > 7600)
+  ) {
+    const estimatedVocab = getSoftTargetInBand(input, IELTS_UPPER_BOUNDARY_BAND, recentAverageScore);
+    return {
+      estimatedVocab,
+      recommendedLevel: "ielts",
+    };
+  }
+
+  if (
+    input.questionCount >= 80 &&
+    input.questionCount < 90 &&
+    input.currentLevel === "ielts" &&
+    input.recommendedLevel === "gre" &&
+    input.confidence < 0.9012
+  ) {
+    const estimatedVocab = getSoftTargetInBand(input, IELTS_UPPER_BOUNDARY_BAND, recentAverageScore);
+    return {
+      estimatedVocab,
+      recommendedLevel: "ielts",
+    };
+  }
+
+  if (
+    input.questionCount >= 80 &&
+    input.questionCount < 90 &&
+    input.currentLevel === "gre" &&
+    input.recommendedLevel === "ielts" &&
+    input.confidence >= 0.9 &&
+    input.confidence < 0.905 &&
+    input.estimatedVocab >= 7600 &&
+    input.estimatedVocab < 8400
+  ) {
+    const estimatedVocab = getSoftTargetInBand(
+      input,
+      IELTS_GRE_HYSTERESIS_RECOVERY_BAND,
+      recentAverageScore,
+    );
+    return {
+      estimatedVocab,
+      recommendedLevel: "ielts",
+    };
+  }
+
+  if (
+    input.questionCount >= 80 &&
+    input.questionCount < 90 &&
+    input.currentLevel === "gre" &&
+    input.recommendedLevel === "ielts" &&
+    input.confidence >= 0.903 &&
+    input.confidence < 0.905 &&
+    input.estimatedVocab >= 7000 &&
+    input.estimatedVocab < 7600
+  ) {
+    const estimatedVocab = getSoftTargetInBand(
+      input,
+      IELTS_GRE_HYSTERESIS_RECOVERY_BAND,
+      recentAverageScore,
+    );
+    return {
+      estimatedVocab,
+      recommendedLevel: "ielts",
+    };
+  }
+
+  if (
+    input.questionCount >= 80 &&
+    input.questionCount < 90 &&
+    input.currentLevel === "gre" &&
+    input.recommendedLevel === "ielts" &&
+    input.confidence >= 0.9 &&
+    input.confidence < 0.905 &&
+    input.estimatedVocab >= 7000 &&
+    input.estimatedVocab < 7600
+  ) {
+    const estimatedVocab = getSoftTargetInBand(
+      input,
+      IELTS_PRE_GRE_TRANSITION_BAND,
+      recentAverageScore,
+    );
+    return {
+      estimatedVocab,
+      recommendedLevel: "ielts",
+    };
+  }
+
+  if (
+    input.questionCount >= 80 &&
+    input.questionCount < 90 &&
+    input.currentLevel === "gre" &&
+    input.recommendedLevel === "ielts" &&
+    input.confidence >= 0.9 &&
+    input.confidence < 0.91 &&
+    input.estimatedVocab < 7600
+  ) {
+    const estimatedVocab = getSoftTargetInBand(input, IELTS_HIGH_RECOVERY_BAND, recentAverageScore);
+    return {
+      estimatedVocab,
+      recommendedLevel: "ielts",
+    };
+  }
+
+  if (
+    input.questionCount >= 80 &&
+    input.questionCount < 84 &&
+    input.currentLevel === "gre" &&
+    input.recommendedLevel === "gre" &&
+    input.confidence < 0.915 &&
+    input.estimatedVocab < 8800
+  ) {
+    return {
+      estimatedVocab: GRE_EARLY_ENTRY_CAP,
+      recommendedLevel: getRecommendedLevel(GRE_EARLY_ENTRY_CAP),
+    };
+  }
+
+  if (
+    input.questionCount >= 84 &&
+    input.questionCount < 90 &&
+    input.currentLevel === "gre" &&
+    input.recommendedLevel === "gre" &&
+    input.confidence >= 0.91 &&
+    input.estimatedVocab >= 8400 &&
+    input.estimatedVocab < 8700
+  ) {
+    const estimatedVocab = getSoftTargetInBand(
+      input,
+      GRE_LATE_STABLE_ENTRY_BAND,
+      recentAverageScore,
+    );
+    return {
+      estimatedVocab,
+      recommendedLevel: "gre",
+    };
+  }
+
+  if (
+    input.questionCount >= 80 &&
+    input.questionCount < 90 &&
+    input.currentLevel === "ielts" &&
+    input.recommendedLevel === "gre" &&
+    input.confidence < 0.9015 &&
+    input.estimatedVocab < 8000
+  ) {
+    const estimatedVocab = getSoftTargetInBand(input, IELTS_UPPER_BOUNDARY_BAND, recentAverageScore);
+    return {
+      estimatedVocab,
+      recommendedLevel: "ielts",
+    };
+  }
+
+  if (
+    input.questionCount >= 80 &&
+    input.questionCount < 90 &&
+    input.currentLevel === "ielts" &&
+    input.recommendedLevel === "gre" &&
+    input.confidence >= 0.9012 &&
+    input.confidence < 0.92 &&
+    input.estimatedVocab >= 8000 &&
+    input.estimatedVocab < 9500
+  ) {
+    const estimatedVocab = getSoftTargetInBand(input, IELTS_PRE_GRE_TRANSITION_BAND, recentAverageScore);
+    return {
+      estimatedVocab,
+      recommendedLevel: "ielts",
+    };
+  }
 
   if (
     input.questionCount >= 100 &&
