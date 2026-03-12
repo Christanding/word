@@ -92,10 +92,14 @@ type SoftTargetBand = {
 const CET4_SOFT_TARGET_BAND: SoftTargetBand = { min: 3200, max: 3300 };
 const CET4_STABLE_TARGET_BAND: SoftTargetBand = { min: 3600, max: 3900 };
 const CET4_LATE_RECOVERY_BAND: SoftTargetBand = { min: 3800, max: 4300 };
+const CET4_TO_CET6_LATE_RECOVERY_BAND: SoftTargetBand = { min: 4700, max: 5200 };
 const CET4_TO_CET6_MISMATCH_RECOVERY_BAND: SoftTargetBand = { min: 4400, max: 5300 };
 const CET4_TO_IELTS_MISMATCH_RECOVERY_BAND: SoftTargetBand = { min: 4000, max: 5000 };
 const CET4_TO_GRE_COLLAPSE_RECOVERY_BAND: SoftTargetBand = { min: 5200, max: 6200 };
 const CET6_SOFT_TARGET_BAND: SoftTargetBand = { min: 4700, max: 4800 };
+const CET6_UPPER_DRIFT_BAND: SoftTargetBand = { min: 5650, max: 5800 };
+const CET6_TO_IELTS_TRANSITION_BAND: SoftTargetBand = { min: 5400, max: 6000 };
+const MID_RANGE_IELTS_EARLY_BAND: SoftTargetBand = { min: 5750, max: 5950 };
 const IELTS_SOFT_TARGET_BAND: SoftTargetBand = { min: 7000, max: 7600 };
 const IELTS_UPPER_BOUNDARY_BAND: SoftTargetBand = { min: 7000, max: 7400 };
 const IELTS_HIGH_RECOVERY_BAND: SoftTargetBand = { min: 7000, max: 7800 };
@@ -536,6 +540,24 @@ export function applyEstimatedVocabGuardrail(input: EstimatedVocabGuardrailInput
   }
 
   if (
+    input.questionCount >= 100 &&
+    input.startedLevel === "cet4" &&
+    input.currentLevel === "cet6" &&
+    input.recommendedLevel === "cet6" &&
+    input.confidence >= 0.89 &&
+    input.estimatedVocab >= 5200 &&
+    input.estimatedVocab < 6000
+  ) {
+    const recentCet6Answers = input.answers.filter((answer) => answer.level === "cet6").slice(-12);
+    const recentCet6Average =
+      recentCet6Answers.length > 0
+        ? recentCet6Answers.reduce((sum, answer) => sum + scoreAnswer(answer), 0) / recentCet6Answers.length
+        : 0.5;
+
+    return getSoftTargetInBand(input, CET4_TO_CET6_LATE_RECOVERY_BAND, recentCet6Average);
+  }
+
+  if (
     hasStrongAdvancedMasteryEvidence(input.answers, input.currentLevel, {
       confidence: input.confidence,
       estimatedVocab: input.estimatedVocab,
@@ -638,6 +660,25 @@ export function applyFinalLevelPriorityAdjustment(
       : 0.5;
 
   if (
+    input.questionCount >= 95 &&
+    input.startedLevel === "cet4" &&
+    input.currentLevel === "cet6" &&
+    input.recommendedLevel === "ielts" &&
+    input.confidence < 0.905 &&
+    input.estimatedVocab < 6500
+  ) {
+    const estimatedVocab = getSoftTargetInBand(
+      input,
+      CET6_TO_IELTS_TRANSITION_BAND,
+      recentAverageScore,
+    );
+    return {
+      estimatedVocab,
+      recommendedLevel: getRecommendedLevel(estimatedVocab),
+    };
+  }
+
+  if (
     input.questionCount >= 85 &&
     input.startedLevel === "cet4" &&
     input.currentLevel === "ielts" &&
@@ -706,9 +747,10 @@ export function applyFinalLevelPriorityAdjustment(
     input.estimatedVocab > MID_RANGE_IELTS_EARLY_CAP &&
     input.estimatedVocab < 6500
   ) {
+    const estimatedVocab = getSoftTargetInBand(input, MID_RANGE_IELTS_EARLY_BAND, recentAverageScore);
     return {
-      estimatedVocab: MID_RANGE_IELTS_EARLY_CAP,
-      recommendedLevel: getRecommendedLevel(MID_RANGE_IELTS_EARLY_CAP),
+      estimatedVocab,
+      recommendedLevel: getRecommendedLevel(estimatedVocab),
     };
   }
 
@@ -721,9 +763,30 @@ export function applyFinalLevelPriorityAdjustment(
     input.confidence < 0.905 &&
     input.estimatedVocab > CET6_UPPER_DRIFT_CAP
   ) {
+    const estimatedVocab = getSoftTargetInBand(input, CET6_UPPER_DRIFT_BAND, recentAverageScore);
     return {
-      estimatedVocab: CET6_UPPER_DRIFT_CAP,
+      estimatedVocab,
       recommendedLevel: "cet6",
+    };
+  }
+
+  if (
+    input.questionCount >= 80 &&
+    input.questionCount < 90 &&
+    input.currentLevel === "gre" &&
+    input.recommendedLevel === "ielts" &&
+    input.confidence >= 0.903 &&
+    input.estimatedVocab >= 8400 &&
+    input.estimatedVocab < 9000
+  ) {
+    const estimatedVocab = getSoftTargetInBand(
+      input,
+      GRE_LATE_STABLE_ENTRY_BAND,
+      recentAverageScore,
+    );
+    return {
+      estimatedVocab,
+      recommendedLevel: "gre",
     };
   }
 
@@ -924,6 +987,26 @@ export function applyFinalLevelPriorityAdjustment(
   if (
     input.questionCount >= 100 &&
     input.startedLevel === "cet4" &&
+    input.currentLevel === "cet6" &&
+    input.recommendedLevel === "cet4" &&
+    input.confidence >= 0.89 &&
+    input.estimatedVocab >= 3900 &&
+    input.estimatedVocab < 4500
+  ) {
+    const estimatedVocab = getSoftTargetInBand(
+      input,
+      CET4_TO_CET6_LATE_RECOVERY_BAND,
+      recentAverageScore,
+    );
+    return {
+      estimatedVocab,
+      recommendedLevel: getRecommendedLevel(estimatedVocab),
+    };
+  }
+
+  if (
+    input.questionCount >= 100 &&
+    input.startedLevel === "cet4" &&
     (input.currentLevel === "cet4" || input.currentLevel === "cet6") &&
     input.recommendedLevel === "cet4" &&
     input.confidence >= 0.89 &&
@@ -1030,6 +1113,15 @@ function getEstimatedVocabSoftTargetBand(
   recentAverageScore: number,
 ): SoftTargetBand | null {
   if (input.recommendedLevel === "cet4") {
+    if (
+      input.currentLevel === "cet6" &&
+      input.questionCount >= 100 &&
+      input.confidence >= 0.89 &&
+      input.estimatedVocab >= 3900
+    ) {
+      return CET4_TO_CET6_LATE_RECOVERY_BAND;
+    }
+
     if (levelToIndex(input.currentLevel) > levelToIndex("cet4")) {
       return CET4_SOFT_TARGET_BAND;
     }
@@ -1052,6 +1144,9 @@ function getEstimatedVocabSoftTargetBand(
     input.estimatedVocab < 4900 &&
     input.confidence < 0.91
   ) {
+    if (input.questionCount >= 100 && input.currentLevel === "cet6" && input.estimatedVocab >= 4000) {
+      return CET4_TO_CET6_LATE_RECOVERY_BAND;
+    }
     return CET4_SOFT_TARGET_BAND;
   }
 

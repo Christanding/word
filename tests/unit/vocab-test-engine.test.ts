@@ -658,6 +658,27 @@ describe("vocab-test engine", () => {
     expect(guarded).toBeLessThan(3400);
   });
 
+  it("applyEstimatedVocabGuardrail: should preserve near-cet6 late sessions above the cet4 floor", () => {
+    const answers = [
+      ...stageWarmup("near-cet6-late-guardrail-warmup", "cet4", 18),
+      ...stageBoundary("near-cet6-late-guardrail-boundary", "cet6", 30),
+      ...stageLateDrift("near-cet6-late-guardrail-drift", "cet6", 62),
+    ];
+
+    const guarded = applyEstimatedVocabGuardrail({
+      questionCount: 110,
+      estimatedVocab: 5764,
+      confidence: 0.9000,
+      currentLevel: "cet6",
+      recommendedLevel: "cet4",
+      startedLevel: "cet4",
+      answers,
+    });
+
+    expect(guarded).toBeGreaterThanOrEqual(4700);
+    expect(guarded).toBeLessThanOrEqual(5200);
+  });
+
   it("applyEstimatedVocabGuardrail: should downshift very early gre-to-cet6 finishes into the cet4 soft band", () => {
     const answers = Array.from({ length: 76 }).map((_, idx) =>
       answer({
@@ -1303,16 +1324,16 @@ describe("vocab-test engine", () => {
     const adjusted = applyFinalLevelPriorityAdjustment({
       questionCount: 80,
       confidence: 0.9035,
-      estimatedVocab: 7708,
+      estimatedVocab: 8594,
       recommendedLevel: "ielts",
       currentLevel: "gre",
       startedLevel: "ielts",
       answers,
     });
 
-    expect(adjusted.recommendedLevel).toBe("ielts");
-    expect(adjusted.estimatedVocab).toBeGreaterThanOrEqual(8400);
-    expect(adjusted.estimatedVocab).toBeLessThanOrEqual(9200);
+    expect(adjusted.recommendedLevel).toBe("gre");
+    expect(adjusted.estimatedVocab).toBeGreaterThanOrEqual(8800);
+    expect(adjusted.estimatedVocab).toBeLessThanOrEqual(9300);
   });
 
   it("applyFinalLevelPriorityAdjustment: should keep lower upper-ielts samples out of the pre-gre transition band", () => {
@@ -1497,6 +1518,139 @@ describe("vocab-test engine", () => {
 
     expect(resolved.recommendedLevel).toBe("gre");
     expect(resolved.estimatedVocab).toBeLessThanOrEqual(10400);
+  });
+
+  it("resolveGuardedEstimatedVocab: should pull upper-cet6 trajectories back below the ielts cutoff", () => {
+    const answers = [
+      ...stageWarmup("upper-cet6-guardrail-warmup", "cet4", 16),
+      ...stageBoundary("upper-cet6-guardrail-boundary", "cet6", 30),
+      ...stageChallenge("upper-cet6-guardrail-challenge", "ielts", 24),
+      ...stageLateDrift("upper-cet6-guardrail-drift", "ielts", 18),
+    ];
+
+    const resolved = resolveGuardedEstimatedVocab({
+      questionCount: 88,
+      estimatedVocab: 6451,
+      confidence: 0.9005,
+      currentLevel: "ielts",
+      startedLevel: "cet4",
+      answers,
+    });
+
+    expect(resolved.recommendedLevel).toBe("cet6");
+    expect(resolved.estimatedVocab).toBeLessThanOrEqual(6000);
+  });
+
+  it("resolveGuardedEstimatedVocab: should not collapse near-cet6 late sessions into the cet4 floor", () => {
+    const answers = [
+      ...stageWarmup("near-cet6-late-resolve-warmup", "cet4", 18),
+      ...stageBoundary("near-cet6-late-resolve-boundary", "cet6", 30),
+      ...stageLateDrift("near-cet6-late-resolve-drift", "cet6", 62),
+    ];
+
+    const resolved = resolveGuardedEstimatedVocab({
+      questionCount: 110,
+      estimatedVocab: 5764,
+      confidence: 0.9,
+      currentLevel: "cet6",
+      startedLevel: "cet4",
+      answers,
+    });
+
+    expect(resolved.recommendedLevel).toBe("cet6");
+    expect(resolved.estimatedVocab).toBeGreaterThanOrEqual(4700);
+    expect(resolved.estimatedVocab).toBeLessThanOrEqual(5200);
+  });
+
+  it("applyFinalLevelPriorityAdjustment: should keep 4900-level samples out of the late cet4 recovery band", () => {
+    const answers = [
+      ...stageWarmup("mid-low-4900-warmup", "cet4", 18),
+      ...stageBoundary("mid-low-4900-boundary", "cet6", 30),
+      ...stageLateDrift("mid-low-4900-drift", "cet6", 62),
+    ];
+
+    const adjusted = applyFinalLevelPriorityAdjustment({
+      questionCount: 110,
+      confidence: 0.9000,
+      estimatedVocab: 4039,
+      recommendedLevel: "cet4",
+      currentLevel: "cet6",
+      startedLevel: "cet4",
+      answers,
+    });
+
+    expect(adjusted.recommendedLevel).toBe("cet6");
+    expect(adjusted.estimatedVocab).toBeGreaterThanOrEqual(4700);
+    expect(adjusted.estimatedVocab).toBeLessThanOrEqual(5200);
+  });
+
+  it("applyFinalLevelPriorityAdjustment: should keep 5400-level samples out of the low ielts plateau", () => {
+    const answers = [
+      ...stageWarmup("mid-high-5400-warmup", "cet4", 16),
+      ...stageBoundary("mid-high-5400-boundary", "cet6", 34),
+      ...stageChallenge("mid-high-5400-challenge", "ielts", 28),
+      ...stageLateDrift("mid-high-5400-drift", "cet6", 21),
+    ];
+
+    const adjusted = applyFinalLevelPriorityAdjustment({
+      questionCount: 99,
+      confidence: 0.9008,
+      estimatedVocab: 6146,
+      recommendedLevel: "ielts",
+      currentLevel: "cet6",
+      startedLevel: "cet4",
+      answers,
+    });
+
+    expect(adjusted.recommendedLevel).toBe("cet6");
+    expect(adjusted.estimatedVocab).toBeGreaterThanOrEqual(5400);
+    expect(adjusted.estimatedVocab).toBeLessThanOrEqual(6000);
+  });
+
+  it("applyFinalLevelPriorityAdjustment: should not pin late upper-cet6 sessions to the 5990 plateau", () => {
+    const answers = [
+      ...stageWarmup("upper-cet6-5990-platform-warmup", "cet4", 16),
+      ...stageBoundary("upper-cet6-5990-platform-boundary", "cet6", 30),
+      ...stageChallenge("upper-cet6-5990-platform-challenge", "ielts", 24),
+      ...stageLateDrift("upper-cet6-5990-platform-drift", "ielts", 26),
+    ];
+
+    const adjusted = applyFinalLevelPriorityAdjustment({
+      questionCount: 96,
+      confidence: 0.9040,
+      estimatedVocab: 6248,
+      recommendedLevel: "ielts",
+      currentLevel: "ielts",
+      startedLevel: "cet4",
+      answers,
+    });
+
+    expect(adjusted.recommendedLevel).toBe("cet6");
+    expect(adjusted.estimatedVocab).toBeGreaterThanOrEqual(5750);
+    expect(adjusted.estimatedVocab).toBeLessThanOrEqual(5900);
+  });
+
+  it("applyFinalLevelPriorityAdjustment: should not clamp upper-cet6 drift to a flat 5850 plateau", () => {
+    const answers = [
+      ...stageWarmup("upper-cet6-flat-plateau-warmup", "cet4", 16),
+      ...stageBoundary("upper-cet6-flat-plateau-boundary", "cet6", 30),
+      ...stageChallenge("upper-cet6-flat-plateau-challenge", "ielts", 24),
+      ...stageLateDrift("upper-cet6-flat-plateau-drift", "ielts", 21),
+    ];
+
+    const adjusted = applyFinalLevelPriorityAdjustment({
+      questionCount: 91,
+      confidence: 0.9041,
+      estimatedVocab: 5950,
+      recommendedLevel: "cet6",
+      currentLevel: "ielts",
+      startedLevel: "cet4",
+      answers,
+    });
+
+    expect(adjusted.recommendedLevel).toBe("cet6");
+    expect(adjusted.estimatedVocab).toBeGreaterThanOrEqual(5650);
+    expect(adjusted.estimatedVocab).toBeLessThanOrEqual(5800);
   });
 
   it("persona simulation: should keep a cet4 user inside the cet4 band", () => {
