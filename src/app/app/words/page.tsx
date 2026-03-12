@@ -37,6 +37,10 @@ interface ManualDefinitionRow {
   sensesText: string;
 }
 
+function normalizeLemma(value: string | null | undefined): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
 function createManualRow(): ManualDefinitionRow {
   return {
     id: crypto.randomUUID(),
@@ -89,12 +93,13 @@ export default function WordsPage() {
   }, [loadWords]);
 
   const filteredWords = words.filter((word) => {
-    const matchesSearch = word.lemma.toLowerCase().includes(searchTerm.toLowerCase());
+    const lemma = normalizeLemma(word.lemma);
+    const matchesSearch = lemma.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesFilter =
       filter === "all" ||
       (filter === "reviewed" && word.hasReviewed) ||
       (filter === "unreviewed" && !word.hasReviewed);
-    return matchesSearch && matchesFilter;
+    return lemma.length > 0 && matchesSearch && matchesFilter;
   });
 
   const stats = {
@@ -511,7 +516,10 @@ export default function WordsPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {filteredWords.slice(0, 100).map((word, index) => (
+                    {filteredWords.slice(0, 100).map((word, index) => {
+                      const lemma = normalizeLemma(word.lemma);
+
+                      return (
                       <Fragment key={word.id}>
                         <tr
                           className="hover:bg-indigo-50/50 transition-colors duration-150"
@@ -527,10 +535,10 @@ export default function WordsPage() {
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-3">
                               <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center text-indigo-600 font-bold text-sm">
-                                {word.lemma[0].toUpperCase()}
+                                {lemma[0]?.toUpperCase() ?? "?"}
                               </div>
                               <span className="font-semibold text-slate-800 text-base">
-                                {word.lemma}
+                                {lemma}
                               </span>
                             </div>
                           </td>
@@ -570,7 +578,7 @@ export default function WordsPage() {
                           </tr>
                         )}
                       </Fragment>
-                    ))}
+                    );})}
                   </tbody>
                 </table>
               </div>

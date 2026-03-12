@@ -6,6 +6,10 @@ import { dedupeWordsByLemma } from "@/lib/words-list";
 
 const POS_MARKERS = new Set(["n", "v", "adj", "adv", "vt", "vi", "prep", "pron", "conj", "det"]);
 
+function normalizeLemma(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
@@ -38,7 +42,10 @@ export async function GET(request: NextRequest) {
     }
 
     const words = await db.findMany<Word>("words", query, { limit, orderBy: "frequency", order: "desc" });
-    const filteredWords = words.filter((word) => !POS_MARKERS.has(word.lemma.toLowerCase()));
+    const filteredWords = words.filter((word) => {
+      const lemma = normalizeLemma(word.lemma);
+      return lemma.length > 0 && !POS_MARKERS.has(lemma.toLowerCase());
+    });
 
     const cards = await db.findMany<Card>("cards", { userId });
     const reviews = await db.findMany<Review>("reviews", { userId });
@@ -58,7 +65,7 @@ export async function GET(request: NextRequest) {
         const preferredDefinition = usableDefinitions[0];
         return {
           id: word.id,
-          lemma: word.lemma,
+          lemma: normalizeLemma(word.lemma),
           frequency: word.frequency,
           hasDefinition: !!preferredDefinition,
           hasReviewed: reviewedWordIds.has(word.id),
