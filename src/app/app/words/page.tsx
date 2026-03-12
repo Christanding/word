@@ -41,9 +41,17 @@ function normalizeLemma(value: string | null | undefined): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function createClientId(): string {
+  if (typeof globalThis.crypto?.randomUUID === "function") {
+    return globalThis.crypto.randomUUID();
+  }
+
+  return `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 function createManualRow(): ManualDefinitionRow {
   return {
-    id: crypto.randomUUID(),
+    id: createClientId(),
     pos: "",
     sensesText: "",
   };
@@ -243,7 +251,7 @@ export default function WordsPage() {
 
       const generatedRows = Array.isArray(data.definitions)
         ? data.definitions.map((definition: { pos?: string; senses?: string[] }) => ({
-            id: crypto.randomUUID(),
+            id: createClientId(),
             pos: definition.pos || "",
             sensesText: Array.isArray(definition.senses) ? definition.senses.join("；") : "",
           }))
