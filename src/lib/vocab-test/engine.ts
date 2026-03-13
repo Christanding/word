@@ -108,6 +108,9 @@ const IELTS_PRE_GRE_TRANSITION_BAND: SoftTargetBand = { min: 7600, max: 7990 };
 const GRE_LATE_RECOVERY_BAND: SoftTargetBand = { min: 9000, max: 9600 };
 const GRE_LATE_STABLE_ENTRY_BAND: SoftTargetBand = { min: 8700, max: 9200 };
 const GRE_MODERATE_CONFIDENCE_CAP = 10400;
+const CET6_TO_IELTS_TRANSITION_FLOOR_SLACK = 250;
+const CET4_TO_CET6_LATE_RECOVERY_FLOOR_SLACK = 300;
+const GRE_LATE_MODERATE_CONFIDENCE_CAP = 0.94;
 const MID_RANGE_IELTS_EARLY_CAP = 5990;
 const CET6_UPPER_DRIFT_CAP = 5850;
 const GRE_EARLY_ENTRY_CAP = 8200;
@@ -665,6 +668,11 @@ export function applyFinalLevelPriorityAdjustment(
     input.currentLevel === "cet6" &&
     input.recommendedLevel === "ielts" &&
     input.confidence < 0.905 &&
+    canLiftEstimateIntoBand(
+      input.estimatedVocab,
+      CET6_TO_IELTS_TRANSITION_BAND,
+      CET6_TO_IELTS_TRANSITION_FLOOR_SLACK,
+    ) &&
     input.estimatedVocab < 6500
   ) {
     const estimatedVocab = getSoftTargetInBand(
@@ -1021,10 +1029,10 @@ export function applyFinalLevelPriorityAdjustment(
 
   if (
     input.questionCount >= 70 &&
-    input.questionCount < 90 &&
+    input.questionCount < 110 &&
     input.currentLevel === "gre" &&
     input.recommendedLevel === "gre" &&
-    input.confidence < 0.92 &&
+    input.confidence < GRE_LATE_MODERATE_CONFIDENCE_CAP &&
     input.estimatedVocab > GRE_MODERATE_CONFIDENCE_CAP &&
     recentAverageScore < 0.82
   ) {
@@ -1108,6 +1116,10 @@ function getSoftTargetInBand(
   return Math.round(band.min + (band.max - band.min) * strength);
 }
 
+function canLiftEstimateIntoBand(estimatedVocab: number, band: SoftTargetBand, floorSlack: number): boolean {
+  return estimatedVocab >= band.min - floorSlack;
+}
+
 function getEstimatedVocabSoftTargetBand(
   input: EstimatedVocabGuardrailInput,
   recentAverageScore: number,
@@ -1144,7 +1156,16 @@ function getEstimatedVocabSoftTargetBand(
     input.estimatedVocab < 4900 &&
     input.confidence < 0.91
   ) {
-    if (input.questionCount >= 100 && input.currentLevel === "cet6" && input.estimatedVocab >= 4000) {
+    if (
+      input.questionCount >= 100 &&
+      input.startedLevel === "cet4" &&
+      input.currentLevel === "cet6" &&
+      canLiftEstimateIntoBand(
+        input.estimatedVocab,
+        CET4_TO_CET6_LATE_RECOVERY_BAND,
+        CET4_TO_CET6_LATE_RECOVERY_FLOOR_SLACK,
+      )
+    ) {
       return CET4_TO_CET6_LATE_RECOVERY_BAND;
     }
     return CET4_SOFT_TARGET_BAND;

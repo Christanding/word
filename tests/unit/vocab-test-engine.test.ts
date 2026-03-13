@@ -1202,6 +1202,28 @@ describe("vocab-test engine", () => {
     expect(adjusted.estimatedVocab).toBeLessThanOrEqual(5850);
   });
 
+  it("applyFinalLevelPriorityAdjustment: should not lift mid-cet6 estimates into the ielts transition band when they are still far below the floor", () => {
+    const answers = [
+      ...stageWarmup("mid-cet6-transition-warmup", "cet4", 18),
+      ...stageBoundary("mid-cet6-transition-boundary", "cet6", 34),
+      ...stageChallenge("mid-cet6-transition-challenge", "ielts", 22),
+      ...stageLateDrift("mid-cet6-transition-drift", "cet6", 24),
+    ];
+
+    const adjusted = applyFinalLevelPriorityAdjustment({
+      questionCount: 98,
+      confidence: 0.9044,
+      estimatedVocab: 4900,
+      recommendedLevel: "ielts",
+      currentLevel: "cet6",
+      startedLevel: "cet4",
+      answers,
+    });
+
+    expect(adjusted.estimatedVocab).toBe(4900);
+    expect(adjusted.estimatedVocab).toBeLessThan(5400);
+  });
+
   it("applyFinalLevelPriorityAdjustment: should rein in overly high upper-ielts boundary results", () => {
     const answers = [
       ...stageWarmup("upper-ielts-high-warmup", "cet6", 14),
@@ -1242,6 +1264,56 @@ describe("vocab-test engine", () => {
 
     expect(adjusted.recommendedLevel).toBe("ielts");
     expect(adjusted.estimatedVocab).toBeGreaterThanOrEqual(7000);
+  });
+
+  it("applyFinalLevelPriorityAdjustment: should cap late gre finals even after confidence rises above the old moderate threshold", () => {
+    const answers = [
+      ...stageWarmup("late-gre-cap-boost-warmup", "ielts", 12),
+      ...buildStageAnswers({
+        prefix: "late-gre-cap-boost-boundary",
+        level: "gre",
+        count: 58,
+        responseAt: (index) => {
+          if (index % 10 === 0) {
+            return { responseType: "unknown", isCorrect: false, knew: false, selectedMeaning: null };
+          }
+          if (index % 7 === 0) {
+            return { responseType: "unsure", isCorrect: false, knew: true, selectedMeaning: null };
+          }
+          if (index % 5 === 0) {
+            return { responseType: "option", isCorrect: false, knew: true, selectedMeaning: "错误释义" };
+          }
+          return { responseType: "option", isCorrect: true, knew: true, selectedMeaning: "正确释义" };
+        },
+      }),
+      ...buildStageAnswers({
+        prefix: "late-gre-cap-boost-tail",
+        level: "gre",
+        count: 26,
+        responseAt: (index) => {
+          if (index % 6 === 0) {
+            return { responseType: "unknown", isCorrect: false, knew: false, selectedMeaning: null };
+          }
+          if (index % 4 === 0) {
+            return { responseType: "option", isCorrect: false, knew: true, selectedMeaning: "错误释义" };
+          }
+          return { responseType: "option", isCorrect: true, knew: true, selectedMeaning: "正确释义" };
+        },
+      }),
+    ];
+
+    const adjusted = applyFinalLevelPriorityAdjustment({
+      questionCount: 96,
+      confidence: 0.924,
+      estimatedVocab: 10525,
+      recommendedLevel: "gre",
+      currentLevel: "gre",
+      startedLevel: "gre",
+      answers,
+    });
+
+    expect(adjusted.recommendedLevel).toBe("gre");
+    expect(adjusted.estimatedVocab).toBeLessThanOrEqual(10400);
   });
 
   it("applyFinalLevelPriorityAdjustment: should recover collapsed mid-range users when current level is still gre", () => {
